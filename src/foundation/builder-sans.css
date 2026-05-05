@@ -1,0 +1,35 @@
+/*
+ * Builder Sans — weights aligned with Foundation guidance (Regular 400, Medium 500,
+ * SemiBold 600, Bold 700). Thin/Light/ExtraBold files are not registered.
+ */
+@font-face {
+  font-family: 'Builder Sans';
+  src: url('../assets/fonts/builder-sans/BuilderSans-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Builder Sans';
+  src: url('../assets/fonts/builder-sans/BuilderSans-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Builder Sans';
+  src: url('../assets/fonts/builder-sans/BuilderSans-SemiBold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Builder Sans';
+  src: url('../assets/fonts/builder-sans/BuilderSans-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}

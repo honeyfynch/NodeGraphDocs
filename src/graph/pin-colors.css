@@ -1,0 +1,87 @@
+/*
+  Pin + noodle strokes — hex matches Figma Node Pin `73:5524` (`get_variable_defs`).
+*/
+
+.pin-stroke-gray {
+  stroke: #6a6f81;
+}
+.pin-fill-gray {
+  fill: #6a6f81;
+}
+
+.pin-stroke-green {
+  stroke: #2a9835;
+}
+.pin-fill-green {
+  fill: #2a9835;
+}
+
+.pin-stroke-magenta {
+  stroke: #cf54cb;
+}
+.pin-fill-magenta {
+  fill: #cf54cb;
+}
+
+.pin-stroke-lima {
+  stroke: #74900e;
+}
+.pin-fill-lima {
+  fill: #74900e;
+}
+
+.pin-stroke-berry {
+  stroke: #e54c7f;
+}
+.pin-fill-berry {
+  fill: #e54c7f;
+}
+
+.pin-stroke-orange {
+  stroke: #da611b;
+}
+.pin-fill-orange {
+  fill: #da611b;
+}
+
+.pin-stroke-blue {
+  stroke: #447ffd;
+}
+.pin-fill-blue {
+  fill: #447ffd;
+}
+
+.pin-stroke-purple {
+  stroke: #9b6af6;
+}
+.pin-fill-purple {
+  fill: #9b6af6;
+}
+
+.pin-stroke-ice {
+  stroke: #0c90c0;
+}
+.pin-fill-ice {
+  fill: #0c90c0;
+}
+
+.pin-stroke-red {
+  stroke: #ed4d3b;
+}
+.pin-fill-red {
+  fill: #ed4d3b;
+}
+
+.pin-stroke-yellow {
+  stroke: #b27b06;
+}
+.pin-fill-yellow {
+  fill: #b27b06;
+}
+
+.pin-stroke-rainforest {
+  stroke: #06987b;
+}
+.pin-fill-rainforest {
+  fill: #06987b;
+}

@@ -1,0 +1,713 @@
+/*
+  Studio dark UI — aligned to Figma node graph draft (surface-200, strokes, Builder-like scale).
+*/
+
+@import './builder-sans.css';
+
+:root {
+  --studio-canvas: #121215;
+  /** Foundation-style alias — graph canvas / Node Pin `connected=false` interior (Figma `73:5524`). */
+  --studio-surface-0: var(--studio-canvas);
+  --studio-surface-100: #191a1f;
+  --studio-surface-200: #202227;
+  --studio-header-neutral: #494d5a;
+  --studio-header-emphasis: rgb(51, 95, 255);
+  --studio-header-muted: #3a3d47;
+  /** Figma `stroke/default` + `Color/Stroke/Default` from `get_variable_defs` on Node `73:26702`. */
+  --studio-stroke: #d0d9fb1f;
+  /** Selected node frame — `Color/Content/Emphasis` / `bg/system-contrast` (same file variables). */
+  --studio-stroke-system-contrast: #f7f7f8;
+  --studio-content-default: #d5d7dd;
+  --studio-content-muted: #bcbec8;
+  --studio-content-emphasis: #f7f7f8;
+  --studio-radius: 4px;
+  --studio-radius-panel: 8px;
+
+  /** Matches `.studio-node-card` stroke (`Stroke/Weight` 1px); inset focus ring on property controls. */
+  --studio-focus-ring-width: 1px;
+  --studio-focus-ring-color: rgba(51, 95, 255, 0.45);
+
+  /*
+   * Foundation grid semantics — must match `FOUNDATION_NODE_GRAPH_CSS_VAR_VALUES` in
+   * `src/graph/nodeGraphDesignAssistRecipes.ts` (committed Design Assist recipe contract).
+   * Figma refs: `73:26702` `.NodeRow` (row paddingY 4px = `--foundation-padding-xsmall` in `nodeRow`),
+   * `73:5672` / `73:5695` / `73:5685` `.NodeProperty` variants. `--foundation-padding-xxsmall` stays 2px for inner control insets.
+   */
+  --foundation-gap-xsmall: 4px;
+  --foundation-padding-xxsmall: 2px;
+  --foundation-padding-xsmall: 4px;
+  --foundation-padding-small: 8px;
+  --foundation-content-gap: 4px;
+  --foundation-content-min-height: 24px;
+  --foundation-gap-numeric-cells: 6px;
+  --foundation-gap-number-range-inner: 2px;
+  --foundation-label-col-width: 96px;
+  --foundation-padding-range-end: 6px;
+
+  /*
+   * ALPHA text tokens — Figma Node-Graph-Draft (`BodySmall`, `LabelSmall` / body-small, label-small).
+   */
+  --alpha-font-family:
+    'Builder Sans', system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --alpha-text-bodysmall-font-size: 12px;
+  --alpha-text-bodysmall-line-height: 18px;
+  --alpha-text-bodysmall-letter-spacing: 0px;
+  --alpha-text-labelsmall-font-size: 12px;
+  --alpha-text-labelsmall-line-height: 18px;
+  --alpha-text-labelsmall-font-weight: 600;
+  --alpha-text-labelsmall-letter-spacing: 0px;
+}
+
+body.graph-app-body {
+  margin: 0;
+  height: 100%;
+  min-height: 100vh;
+  display: block;
+  background: var(--studio-canvas);
+  color: var(--studio-content-default);
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+  font-weight: 400;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+.app-shell {
+  height: 100%;
+  min-height: 100vh;
+}
+
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+.flex-1 {
+  flex: 1;
+  min-height: 0;
+}
+.items-center {
+  align-items: center;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.gap-xs {
+  gap: 4px;
+}
+.gap-sm {
+  gap: 8px;
+}
+.gap-md {
+  gap: 12px;
+}
+.p-md {
+  padding: 12px;
+}
+.p-sm {
+  padding: 8px;
+}
+.px-md {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.py-sm {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.text-xs {
+  font-family: var(--alpha-font-family);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+}
+.text-sm {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+}
+.text-body-small {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+  font-weight: 400;
+}
+.text-label-small {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-labelsmall-font-size);
+  line-height: var(--alpha-text-labelsmall-line-height);
+  letter-spacing: var(--alpha-text-labelsmall-letter-spacing);
+  font-weight: var(--alpha-text-labelsmall-font-weight);
+}
+.text-muted {
+  color: var(--studio-content-muted);
+}
+.text-emphasis {
+  color: var(--studio-content-emphasis);
+}
+.font-semibold {
+  font-weight: 600;
+}
+.overflow-auto {
+  overflow: auto;
+}
+.min-w-0 {
+  min-width: 0;
+}
+.shrink-0 {
+  flex-shrink: 0;
+}
+
+.absolute {
+  position: absolute;
+}
+
+.m-0 {
+  margin: 0;
+}
+
+.inspector-sub {
+  margin-top: 4px;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Graph node frame — Figma Node `73:26702` (`get_design_context`): `Stroke/Weight` 1px +
+ * `Color/Stroke/Default`; Parameter chip `73:6071` uses `stroke/default` the same way.
+ * Use a real `border` (not `inset` box-shadow): inset shadows paint under descendant backgrounds,
+ * so the stroke disappeared under the header/body fills.
+ * With `box-sizing: border-box`, the 1px border sits inside the authored width like Figma inside stroke.
+ */
+.studio-node-card {
+  border: 1px solid var(--studio-stroke);
+  box-sizing: border-box;
+  /* Avoid drag-selecting chrome; only `.studio-editable-title-input` re-enables selection while editing. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.studio-node-card--selected {
+  border-color: var(--studio-stroke-system-contrast);
+}
+
+/*
+ * Graph play overlay — Figma `109:7339` IconButton (MCP `get_design_context`): 32×32 frame,
+ * `padding-none`, inner Icon `size-[20px]` (20×20) centered → 6px inset all sides; `radius-medium`
+ * 8px; Standard fill rgba(208,217,251,0.12). Foundation TS maps Small icon to `size-400` (16px) but
+ * this file’s instance uses 20px artboard — match **Figma** for pixel parity with your screenshot.
+ */
+.graph-play-mode-control {
+  position: relative;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(208, 217, 251, 0.12);
+  color: var(--studio-content-emphasis);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  flex-shrink: 0;
+}
+
+.graph-play-mode-control__icon-slot {
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.graph-play-mode-control::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.graph-play-mode-control:hover::after {
+  /* Foundation StateLayer idle lift on action-standard (approx. `state/idle` overlay). */
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.graph-play-mode-control:active::after {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.graph-play-mode-control:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--studio-focus-ring-color);
+}
+
+.graph-play-mode-control__img {
+  display: block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  object-position: center;
+}
+
+/* Parameter chip (`73:6071`): stroke ring sits under fill + pin; noodles render above in GraphCanvas. */
+.parameter-node-frame {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Title edit field only — rest of node stays `user-select: none` (see `.studio-node-card`). */
+.studio-node-card .studio-editable-title-input,
+.parameter-node-frame .studio-editable-title-input {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.studio-node-card img,
+.parameter-node-frame img {
+  -webkit-user-drag: none;
+}
+.parameter-node-stroke {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px solid var(--studio-stroke);
+}
+.parameter-node-stroke--selected {
+  border-color: var(--studio-stroke-system-contrast);
+}
+.parameter-node-surface {
+  position: absolute;
+  inset: 1px;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  /* Pin sits at `right: -PIN_OFFSET` like function header — must not clip past the frame. */
+  overflow: visible;
+}
+
+.border-studio {
+  border: 1px solid var(--studio-stroke);
+}
+.bg-surface-inspector {
+  background: var(--studio-surface-100);
+}
+.radius-panel {
+  border-radius: var(--studio-radius-panel);
+}
+.radius-sm {
+  border-radius: var(--studio-radius);
+}
+
+.foundation-web-input {
+  background: var(--studio-surface-200);
+  border: 1px solid var(--studio-stroke);
+  border-radius: var(--studio-radius);
+  color: var(--studio-content-emphasis);
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.foundation-web-input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--studio-focus-ring-width) var(--studio-focus-ring-color);
+}
+
+/*
+ * Foundation-style inspector checkbox — control + label on one row (placement Start),
+ * optional hint under the label (mirrors Foundation `Checkbox` + `gap-medium` row).
+ */
+.foundation-web-checkbox-row {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.foundation-web-checkbox-row--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.foundation-web-checkbox-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.foundation-web-checkbox-box {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  border-radius: var(--studio-radius);
+  border: 1px solid rgba(208, 217, 251, 0.4);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.foundation-web-checkbox-check {
+  opacity: 0;
+  color: #191a1f;
+}
+
+.foundation-web-checkbox-input:checked + .foundation-web-checkbox-box {
+  background: var(--studio-content-emphasis);
+  border-color: var(--studio-content-emphasis);
+}
+
+.foundation-web-checkbox-input:checked + .foundation-web-checkbox-box .foundation-web-checkbox-check {
+  opacity: 1;
+}
+
+.foundation-web-checkbox-input:focus-visible + .foundation-web-checkbox-box {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--studio-focus-ring-color);
+}
+
+.foundation-web-checkbox-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.foundation-web-checkbox-text-title {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-labelsmall-font-size);
+  line-height: var(--alpha-text-labelsmall-line-height);
+  font-weight: var(--alpha-text-labelsmall-font-weight);
+  letter-spacing: var(--alpha-text-labelsmall-letter-spacing);
+  color: var(--studio-content-emphasis);
+}
+
+.foundation-web-checkbox-text-hint {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  font-weight: 400;
+  color: var(--studio-content-muted);
+}
+
+/*
+ * Figma `.NodeProperty` BaseInput ContentArea — same contract as `nodeGraphDesignAssistRecipes`
+ * (`73:5672` Dropdown, `73:5679` TextInput, native `<select>` in-row).
+ */
+.node-property-content-area {
+  position: relative;
+  min-height: var(--foundation-content-min-height);
+  padding-left: var(--foundation-padding-xsmall);
+  padding-right: var(--foundation-padding-xsmall);
+  border-radius: var(--studio-radius);
+  background: rgba(208, 217, 251, 0.08);
+  display: flex;
+  align-items: center;
+  gap: var(--foundation-content-gap);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.node-property-content-area:focus-within {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--studio-focus-ring-width) var(--studio-focus-ring-color);
+}
+
+.node-property-field-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  padding-left: var(--foundation-padding-xxsmall);
+  border: none;
+  outline: none;
+  background: transparent;
+  box-sizing: border-box;
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+  font-weight: 400;
+  color: var(--studio-content-emphasis);
+}
+
+.node-property-field-input:focus {
+  outline: none;
+}
+
+.node-property-field-input::placeholder {
+  color: var(--studio-content-default);
+}
+
+.node-property-field-input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.node-property-field-input[type='number']::-webkit-outer-spin-button,
+.node-property-field-input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.node-property-native-select {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  padding-left: var(--foundation-padding-xxsmall);
+  border: none;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+  font-weight: 400;
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--studio-content-emphasis);
+}
+
+.node-property-interactive-btn {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  padding-left: var(--foundation-padding-xxsmall);
+  border: none;
+  background: transparent;
+  cursor: text;
+  text-align: left;
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+  font-weight: 400;
+}
+
+.node-property-interactive-btn--emphasis {
+  color: var(--studio-content-emphasis);
+}
+
+.node-property-interactive-btn--default {
+  color: var(--studio-content-default);
+}
+
+/* Radix Root is a fragment; wrapper scopes width for node-property hug + truncation. */
+.select-root-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.select-root-wrap--node-property {
+  align-items: flex-start;
+  justify-content: center;
+  min-height: var(--foundation-content-min-height);
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 10px;
+  background: var(--studio-surface-200);
+  border: 1px solid var(--studio-stroke);
+  border-radius: var(--studio-radius);
+  color: var(--studio-content-emphasis);
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  cursor: pointer;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.select-trigger[data-placeholder] {
+  color: var(--studio-content-muted);
+}
+
+/* Radix wraps the icon in a span; fixed slot so label truncates first (Foundation `grow` + truncate pattern). */
+.select-trigger [data-radix-select-icon],
+.select-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  line-height: 0;
+  min-width: 12px;
+}
+
+/* Value region grows/shrinks; text ellipses before the chevron clips (`.NodeProperty` `73:5672`). */
+.select-trigger-value-wrap {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.select-trigger-value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+  min-width: 0;
+  line-height: var(--alpha-text-bodysmall-line-height);
+  text-align: left;
+}
+
+/* Radix select trigger styled as Figma `.NodeProperty` Dropdown ContentArea (`73:5672`). */
+.select-trigger--node-property {
+  min-height: var(--foundation-content-min-height);
+  padding: 0 var(--foundation-padding-xsmall);
+  gap: var(--foundation-content-gap);
+  background: rgba(208, 217, 251, 0.08);
+  border: none;
+  box-shadow: none;
+  align-items: center;
+  line-height: 1;
+  /* Hug intrinsic width up to the property cell; truncate label so the chevron stays inside. */
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.select-trigger--node-property:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--studio-focus-ring-width) var(--studio-focus-ring-color);
+}
+
+.select-content {
+  overflow: hidden;
+  background: var(--studio-surface-200);
+  border: 1px solid var(--studio-stroke);
+  border-radius: var(--studio-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 50;
+}
+
+/*
+ * Option list: match inspector `.select-content`; floor width in `rem` so graph canvas zoom
+ * (CSS transform) does not shrink the menu below readable body-small sizing.
+ */
+.select-content.select-content--menu-stable {
+  min-width: max(11.5rem, var(--radix-select-trigger-width, 0px));
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+}
+
+.select-viewport {
+  padding: 4px;
+}
+
+.select-item {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  padding: 8px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--studio-content-emphasis);
+  outline: none;
+}
+
+.select-item[data-highlighted] {
+  background: rgba(208, 217, 251, 0.08);
+}
+
+.select-scroll-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  font-family: var(--alpha-font-family);
+  color: var(--studio-content-muted);
+}
+
+.btn-studio {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  padding: 6px 12px;
+  border-radius: var(--studio-radius);
+  border: 1px solid var(--studio-stroke);
+  cursor: pointer;
+  background: var(--studio-surface-200);
+  color: var(--studio-content-emphasis);
+}
+
+.btn-studio:hover {
+  background: rgba(208, 217, 251, 0.06);
+}
+
+.btn-studio-emphasis {
+  background: rgb(51, 95, 255);
+  border-color: transparent;
+  color: #fff;
+}
+
+.btn-studio-emphasis:hover {
+  filter: brightness(1.06);
+}
+
+/* Figma `80:68682` focused header TextInput — `.Highlight` fill on selection */
+.studio-editable-title-input::selection {
+  background: rgba(51, 95, 255, 0.4);
+}

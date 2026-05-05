@@ -1,0 +1,6 @@
+node_modules
+dist
+.DS_Store
+
+# Canonical Builder Sans lives in src/assets/fonts/builder-sans/
+/BuilderSans*.otf
