@@ -1,15 +1,19 @@
 import clsx from 'clsx';
 import type { ParameterNode } from '../types';
 import {
+  graphNodeWidth,
+  nodeHeight,
   PARAMETER_CHIP_H,
-  PARAMETER_NODE_W,
   PARAMETER_RADIUS_INNER,
   PARAMETER_RADIUS_OUTER,
   PIN_OFFSET,
   ROW_H,
 } from '../geometry';
+import { parameterDisplayValue } from '../graphWiring';
+import { translucentFill50 } from '../disabledVisual';
 import { NODE_HEADER_HEX } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
+import { NodeResizeEdges } from '../NodeResizeEdges';
 import { Pin } from '../Pin';
 
 /** Inner chip vertical space: outer `PARAMETER_CHIP_H` minus 1px stroke inset top and bottom. */
@@ -19,12 +23,14 @@ type Props = {
   node: ParameterNode;
   selected: boolean;
   outputConnected: boolean;
-  onSelect: () => void;
+  onSelect: (e: React.PointerEvent) => void;
   onToggleExpand: () => void;
   onTitleCommit: (title: string) => void;
   onTitleDragStart: (start: { clientX: number; clientY: number }) => void;
   onHeaderDragPointerDown: (e: React.PointerEvent) => void;
   onOutputPointerDown: (e: React.PointerEvent) => void;
+  onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
+  onNodeContextMenu?: (e: React.MouseEvent) => void;
 };
 
 /**
@@ -44,16 +50,36 @@ export function ParameterNodeView({
   onTitleDragStart,
   onHeaderDragPointerDown,
   onOutputPointerDown,
+  onResizeEdgePointerDown,
+  onNodeContextMenu,
 }: Props) {
   const bg = NODE_HEADER_HEX[node.outputPinColor];
+  const headerFill = node.disabled ? translucentFill50(bg) : bg;
   const expanded = node.expanded;
+  const w = graphNodeWidth(node);
+  const h = nodeHeight(node);
 
   return (
-    <div className="absolute" style={{ left: node.x, top: node.y, width: PARAMETER_NODE_W }}>
+    <div
+      className="absolute"
+      style={{
+        left: node.x,
+        top: node.y,
+        width: w,
+        zIndex: selected ? 4 : 1,
+      }}
+      onContextMenu={(e) => {
+        onNodeContextMenu?.(e);
+      }}
+    >
+      <div style={{ position: 'relative', minHeight: h }}>
+        {onResizeEdgePointerDown ? (
+          <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
+        ) : null}
       <div
         className="parameter-node-frame"
         style={{
-          width: PARAMETER_NODE_W,
+          width: w,
           height: expanded ? PARAMETER_CHIP_H + ROW_H : PARAMETER_CHIP_H,
           position: 'relative',
           borderRadius: PARAMETER_RADIUS_OUTER,
@@ -61,7 +87,7 @@ export function ParameterNodeView({
         }}
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest?.('[data-studio-param-pin]')) return;
-          onSelect();
+          onSelect(e);
         }}
       >
         <div
@@ -87,7 +113,7 @@ export function ParameterNodeView({
               minHeight: PARAMETER_CHIP_INNER_H,
               paddingLeft: 12,
               paddingRight: 12,
-              background: bg,
+              background: headerFill,
               boxSizing: 'border-box',
               position: 'relative',
               borderTopLeftRadius: PARAMETER_RADIUS_INNER,
@@ -116,6 +142,7 @@ export function ParameterNodeView({
                 alignItems: 'stretch',
                 justifyContent: 'center',
                 pointerEvents: 'none',
+                opacity: node.disabled ? 0.5 : 1,
               }}
             >
               <div
@@ -146,14 +173,19 @@ export function ParameterNodeView({
                 top: '50%',
                 transform: 'translateY(-50%)',
                 zIndex: 2,
+                opacity: node.disabled ? 0.5 : 1,
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
-                onSelect();
+                onSelect(e);
                 onOutputPointerDown(e);
               }}
             >
-              <Pin colorId={node.outputPinColor} connected={outputConnected} />
+              <Pin
+                colorId={node.outputPinColor}
+                connected={outputConnected}
+                clipOuterStrokeOn="right"
+              />
             </div>
           </div>
           {expanded ? (
@@ -165,7 +197,9 @@ export function ParameterNodeView({
                 alignItems: 'center',
                 padding: '2px 8px',
                 boxSizing: 'border-box',
-                background: 'var(--studio-surface-200)',
+                background: node.disabled
+                  ? translucentFill50('var(--studio-surface-200)')
+                  : 'var(--studio-surface-200)',
                 borderTop: 'none',
                 borderBottomLeftRadius: PARAMETER_RADIUS_INNER,
                 borderBottomRightRadius: PARAMETER_RADIUS_INNER,
@@ -174,10 +208,16 @@ export function ParameterNodeView({
               <span className="text-sm text-muted" style={{ width: 96, flexShrink: 0 }}>
                 Value
               </span>
-              <div className="flex-1" />
+              <span
+                className="text-sm text-emphasis truncate flex-1 min-w-0 text-right"
+                style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
+              >
+                {parameterDisplayValue(node)}
+              </span>
             </div>
           ) : null}
         </div>
+      </div>
       </div>
     </div>
   );

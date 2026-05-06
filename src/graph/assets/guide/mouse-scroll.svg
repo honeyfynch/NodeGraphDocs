@@ -1,0 +1,11 @@
+<!-- Exported from Figma Node Graph Draft `133:7964` via Dev Mode asset `1ffb4182b0b357af784affc69aaba828f110af61.svg` (@uiblox.icons/controls/mouse/scroll). -->
+<svg viewBox="0 0 11 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M5.5 2.5C5.08579 2.5 4.75 2.83579 4.75 3.25V4.25C4.75 4.66421 5.08579 5 5.5 5C5.91421 5 6.25 4.66421 6.25 4.25V3.25C6.25 2.83579 5.91421 2.5 5.5 2.5Z"
+    fill="currentColor"
+  />
+  <path
+    d="M0 4.5C0 2.01472 2.01472 0 4.5 0H6.5C8.98528 0 11 2.01472 11 4.5V9.5C11 11.9853 8.98528 14 6.5 14H4.5C2.01472 14 0 11.9853 0 9.5V4.5ZM4.5 1C2.567 1 1 2.567 1 4.5V9.5C1 11.433 2.567 13 4.5 13H6.5C8.433 13 10 11.433 10 9.5V4.5C10 2.567 8.433 1 6.5 1H4.5Z"
+    fill="currentColor"
+  />
+</svg>

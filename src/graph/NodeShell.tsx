@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import type { ReactNode } from 'react';
 import type { FrameVariant } from './types';
 import { HEADER_H, PIN_OFFSET } from './geometry';
+import { translucentFill50 } from './disabledVisual';
 import chevronCollapsedUrl from '../assets/icons/node-header-chevron-collapsed.svg?url';
 import chevronExpandedUrl from '../assets/icons/node-header-chevron-expanded.svg?url';
 
@@ -37,6 +38,11 @@ type Props = {
   collapsedBody?: ReactNode;
   onHeaderDragPointerDown: (e: React.PointerEvent) => void;
   onBackgroundPointerDown?: (e: React.PointerEvent) => void;
+  /**
+   * When true, header/body fills use 50% `color-mix`; chevron, title row, leading, and output pin
+   * use `opacity: 0.5`.
+   */
+  dimHeaderChrome?: boolean;
 };
 
 export function NodeShell({
@@ -54,12 +60,21 @@ export function NodeShell({
   collapsedBody,
   onHeaderDragPointerDown,
   onBackgroundPointerDown,
+  dimHeaderChrome,
 }: Props) {
   const bodyContent = expanded ? children : collapsedBody;
   const showBody =
     bodyContent != null &&
     bodyContent !== false &&
     !(Array.isArray(bodyContent) && bodyContent.length === 0);
+
+  const headerBgBase = headerFillOverride ?? (headerStyle(frameVariant).background as string);
+  const headerBackground =
+    dimHeaderChrome && headerBgBase ? translucentFill50(headerBgBase) : headerBgBase;
+  const bodyBackground = dimHeaderChrome
+    ? translucentFill50('var(--studio-surface-200)')
+    : 'var(--studio-surface-200)';
+  const headerChromeOpacity = dimHeaderChrome ? 0.5 : 1;
 
   return (
     <div
@@ -82,9 +97,7 @@ export function NodeShell({
         data-studio-header
         className="studio-node-header flex-row items-center gap-sm text-sm text-emphasis"
         style={{
-          ...(headerFillOverride
-            ? { background: headerFillOverride }
-            : headerStyle(frameVariant)),
+          background: headerBackground,
           position: 'relative',
           minHeight: HEADER_H,
           borderRadius: showBody ? '4px 4px 0 0' : 4,
@@ -109,6 +122,7 @@ export function NodeShell({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            opacity: headerChromeOpacity,
           }}
           onClick={(e) => {
             e.stopPropagation();
@@ -125,11 +139,21 @@ export function NodeShell({
           />
         </button>
         {headerLeading ? (
-          <div className="shrink-0 flex-row items-center">{headerLeading}</div>
+          <div
+            className="shrink-0 flex-row items-center"
+            style={{ opacity: headerChromeOpacity }}
+          >
+            {headerLeading}
+          </div>
         ) : null}
         <div
           className={clsx('flex-1 min-w-0 flex-row items-center')}
-          style={{ cursor: 'grab', minHeight: HEADER_H, paddingRight: headerTrailing != null ? 4 : 0 }}
+          style={{
+            cursor: 'grab',
+            minHeight: HEADER_H,
+            paddingRight: headerTrailing != null ? 4 : 0,
+            opacity: headerChromeOpacity,
+          }}
           onPointerDown={(e) => {
             if ((e.target as HTMLElement).closest?.('[data-studio-editable-title]')) return;
             e.stopPropagation();
@@ -146,6 +170,7 @@ export function NodeShell({
               top: '50%',
               transform: 'translateY(-50%)',
               zIndex: 2,
+              opacity: headerChromeOpacity,
             }}
           >
             {headerTrailing}
@@ -156,7 +181,7 @@ export function NodeShell({
         <div
           className="studio-node-body"
           style={{
-            background: 'var(--studio-surface-200)',
+            background: bodyBackground,
             padding: 0,
             borderRadius: '0 0 4px 4px',
             borderTop: 'none',

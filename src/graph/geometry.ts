@@ -2,6 +2,31 @@ import type { PinColorId } from './pinColors';
 import type { FunctionNode, FunctionSlot, GraphNode } from './types';
 
 export const NODE_W = 200;
+
+/** Minimum / maximum horizontal size for card-style nodes (function, output); min matches default `NODE_W`. */
+export const GRAPH_NODE_MIN_W_CARD = NODE_W;
+export const GRAPH_NODE_MAX_W = 350;
+/** Minimum width for parameter chips when resized. */
+export const GRAPH_NODE_MIN_W_PARAMETER = 80;
+
+/** Card width in graph space (function / output). */
+export function graphNodeCardWidth(node: Extract<GraphNode, { kind: 'function' | 'output' }>): number {
+  return node.width ?? NODE_W;
+}
+
+/** Parameter chip width in graph space. */
+export function graphNodeParameterWidth(node: Extract<GraphNode, { kind: 'parameter' }>): number {
+  return node.width ?? PARAMETER_NODE_W;
+}
+
+export function graphNodeWidth(node: GraphNode): number {
+  if (node.kind === 'parameter') return graphNodeParameterWidth(node);
+  return graphNodeCardWidth(node);
+}
+
+export function graphNodeMinWidth(node: GraphNode): number {
+  return node.kind === 'parameter' ? GRAPH_NODE_MIN_W_PARAMETER : GRAPH_NODE_MIN_W_CARD;
+}
 export const HEADER_H = 28;
 /** `.NodeRow` vertical padding 4px + 24px content + 4px (Figma `73:26702`, Padding.XSmall Y). */
 export const ROW_H = 32;
@@ -150,18 +175,18 @@ export function pinGraphPosition(
   node: GraphNode,
   port: 'out' | `in-${number}`
 ): { x: number; y: number } {
-  const w = NODE_W;
   switch (node.kind) {
     case 'parameter': {
+      const w = graphNodeParameterWidth(node);
       /**
-       * Pin sits on `parameter-node-surface` (`inset: 1px` under the 114px frame), then
-       * `right: -PIN_OFFSET` — center X is not `PARAMETER_NODE_W + PIN_OFFSET` on the outer frame.
+       * Pin sits on `parameter-node-surface` (`inset: 1px` under the frame), then
+       * `right: -PIN_OFFSET` — center X uses graph width `w`.
        * Subtract frame stroke inset and half the 9px pin (same as `NODE_INPUT_PIN_OUTER_R`).
        */
       return {
         x:
           node.x +
-          PARAMETER_NODE_W -
+          w -
           NODE_CARD_CONTENT_INSET +
           PIN_OFFSET -
           NODE_INPUT_PIN_OUTER_R,
@@ -169,6 +194,7 @@ export function pinGraphPosition(
       };
     }
     case 'function': {
+      const w = graphNodeCardWidth(node);
       if (port === 'out') {
         /** Pin center on X (matches header trailing socket; `+ PIN_OFFSET` alone was the pin’s outer edge). */
         return {
@@ -215,7 +241,13 @@ export function pinGraphPosition(
   }
 }
 
+/** Horizontal control offset for cubic wires (matches Figma-style routing). */
+export function bezierHorizontalHandleDx(x1: number, x2: number): number {
+  return Math.max(72, Math.abs(x2 - x1) * 0.45);
+}
+
 export function bezierPath(x1: number, y1: number, x2: number, y2: number): string {
-  const dx = Math.max(72, Math.abs(x2 - x1) * 0.45);
+  const dx = bezierHorizontalHandleDx(x1, x2);
   return `M ${x1} ${y1} C ${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`;
 }
+

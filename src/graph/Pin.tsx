@@ -1,21 +1,38 @@
+import clsx from 'clsx';
 import type { PinColorId } from './pinColors';
-import { PIN_HEX } from './pinColors';
+import { PIN_HEX, formatPinColorOption } from './pinColors';
 
 type Props = {
   colorId: PinColorId;
   connected: boolean;
+  /**
+   * When true (default), show the Figma tooltip (`113:20106`) with the palette name on hover
+   * (e.g. “Magenta”). Set false if the pin is not on the graph canvas.
+   */
+  showColorTooltip?: boolean;
+  /**
+   * On the graph, the 1px outer ring (`--studio-surface-0`) is clipped on this side so it only
+   * appears over node chrome, not over the wire/canvas (output pins: `right`, inputs: `left`).
+   */
+  clipOuterStrokeOn?: 'left' | 'right';
 };
 
 /**
  * 9×9 socket — `connected`: palette fill. Idle: same inner stroke, fill matches graph canvas /
  * `--studio-surface-0`. Figma adds a 1px **outer** stroke in `Color/Surface/Surface_0` — mirrored
- * with `box-shadow` so noodles stay crisp at `PIN_HEX` only on the inner ring.
+ * with `box-shadow` on a clipped layer so wires can meet the pin without a halo on the canvas.
  */
-export function Pin({ colorId, connected }: Props) {
+export function Pin({
+  colorId,
+  connected,
+  showColorTooltip = true,
+  clipOuterStrokeOn,
+}: Props) {
   const hex = PIN_HEX[colorId];
-  return (
+  const colorName = formatPinColorOption(colorId);
+  const core = (
     <div
-      className="studio-pin"
+      className="graph-pin-core"
       style={{
         width: 9,
         height: 9,
@@ -24,8 +41,37 @@ export function Pin({ colorId, connected }: Props) {
         boxSizing: 'border-box',
         background: connected ? hex : 'var(--studio-surface-0)',
         border: `2px solid ${hex}`,
-        boxShadow: '0 0 0 1px var(--studio-surface-0)',
       }}
+      aria-label={showColorTooltip ? colorName : undefined}
     />
+  );
+
+  const outerSlotClass = clsx(
+    'graph-pin-outer-ring-slot',
+    clipOuterStrokeOn === 'left' && 'graph-pin-outer-ring-slot--clip-left',
+    clipOuterStrokeOn === 'right' && 'graph-pin-outer-ring-slot--clip-right',
+    clipOuterStrokeOn == null && 'graph-pin-outer-ring-slot--no-clip'
+  );
+
+  const dot = (
+    <span className="graph-pin-root">
+      <span className={outerSlotClass} aria-hidden>
+        <span className="graph-pin-outer-ring" />
+      </span>
+      {core}
+    </span>
+  );
+
+  if (!showColorTooltip) {
+    return dot;
+  }
+
+  return (
+    <span className="graph-pin-wrap">
+      {dot}
+      <span className="graph-pin-tooltip" role="tooltip">
+        {colorName}
+      </span>
+    </span>
   );
 }

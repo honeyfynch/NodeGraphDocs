@@ -12,7 +12,11 @@ type Props = {
   value: string;
   onCommit: (next: string) => void;
   /** Start canvas node drag using pointer-down coordinates (for grab offset). */
-  onTitleDragStart: (startClient: { clientX: number; clientY: number }) => void;
+  onTitleDragStart: (startClient: {
+    clientX: number;
+    clientY: number;
+    shiftKey?: boolean;
+  }) => void;
 };
 
 /**
@@ -85,7 +89,11 @@ export function EditableNodeTitle({ value, onCommit, onTitleDragStart }: Props) 
         const dy = ev.clientY - startY;
         if (dx * dx + dy * dy >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
           moved = true;
-          onTitleDragStart({ clientX: grabClientX, clientY: grabClientY });
+          onTitleDragStart({
+            clientX: grabClientX,
+            clientY: grabClientY,
+            shiftKey: e.shiftKey,
+          });
           cleanup();
         }
       };

@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { viewToFrameNodes } from './graphFrameSelection';
+import { GraphContextMenu } from './GraphContextMenu';
+import { GraphParameterPanel } from './GraphParameterPanel';
+import { NodeContextMenu } from './NodeContextMenu';
+import { GraphNavigationGuide } from './GraphNavigationGuide';
 import { useGraph } from './GraphContext';
 import type { GraphEdge, GraphNode } from './types';
 import {
   bezierPath,
+  GRAPH_NODE_MAX_W,
+  graphNodeMinWidth,
+  graphNodeWidth,
   inputPinColorForTarget,
   layoutFunctionInputPorts,
   NODE_INPUT_PIN_OUTER_R,
@@ -50,9 +58,24 @@ type WireDrag =
 type NodeDrag =
   | null
   | {
-      nodeId: string;
+      /** Node under the pointer (drives grab offset and delta). */
+      primaryId: string;
       grabDx: number;
       grabDy: number;
+      /** Graph-space positions at pointer down for every node that moves with this drag. */
+      origins: Record<string, { x: number; y: number }>;
+    };
+
+/** Horizontal edge resize in graph space (baseline captured at pointer down). */
+type ResizeDrag =
+  | null
+  | {
+      nodeId: string;
+      edge: 'left' | 'right';
+      startGraphX: number;
+      startWidth: number;
+      startNodeX: number;
+      minWidth: number;
     };
 
 type PanDrag =
@@ -114,6 +137,24 @@ export function GraphCanvas() {
   const [wireDrag, setWireDrag] = useState<WireDrag>(null);
   const [nodeDrag, setNodeDrag] = useState<NodeDrag>(null);
   const [panDrag, setPanDrag] = useState<PanDrag>(null);
+  const [resizeDrag, setResizeDrag] = useState<ResizeDrag>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    clientX: number;
+    clientY: number;
+    /** Graph-space point for Paste from this menu (right-click location). */
+    pasteOriginGraph: { x: number; y: number };
+  } | null>(null);
+  const contextMenuRef = useRef(contextMenu);
+  contextMenuRef.current = contextMenu;
+
+  const [nodeContextMenu, setNodeContextMenu] = useState<{
+    nodeId: string;
+    clientX: number;
+    clientY: number;
+    pasteOriginGraph: { x: number; y: number };
+  } | null>(null);
+  const nodeContextMenuRef = useRef(nodeContextMenu);
+  nodeContextMenuRef.current = nodeContextMenu;
 
   const pendingInputWireRef = useRef<PendingInputWire | null>(null);
   /** When true, the next window `pointerup` must not clear an in-progress wire (click-to-route mode). */
@@ -127,6 +168,8 @@ export function GraphCanvas() {
   panDragRef.current = panDrag;
   const nodeDragRef = useRef(nodeDrag);
   nodeDragRef.current = nodeDrag;
+  const resizeDragRef = useRef(resizeDrag);
+  resizeDragRef.current = resizeDrag;
   const viewRef = useRef(view);
   viewRef.current = view;
 
@@ -151,6 +194,36 @@ export function GraphCanvas() {
     const y = (clientY - r.top - v.ty) / v.scale;
     return { x, y };
   }, []);
+
+  /** Graph-space center of the visible viewport (for paste). */
+  const graphViewCenter = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return { x: WORLD_W / 2, y: WORLD_H / 2 };
+    const r = el.getBoundingClientRect();
+    const v = viewRef.current;
+    const cx = r.width / 2;
+    const cy = r.height / 2;
+    return {
+      x: (cx - v.tx) / v.scale,
+      y: (cy - v.ty) / v.scale,
+    };
+  }, []);
+
+  const runFrameSelection = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    const next = viewToFrameNodes(
+      state.nodes,
+      state.selectedIds,
+      box.width,
+      box.height,
+      48,
+      0.35,
+      2.5
+    );
+    if (next) setView(next);
+  }, [state.nodes, state.selectedIds]);
 
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -233,6 +306,21 @@ export function GraphCanvas() {
         return;
       }
 
+      const rz = resizeDragRef.current;
+      if (rz) {
+        const gx = clientToGraph(e.clientX, e.clientY).x;
+        const d = gx - rz.startGraphX;
+        if (rz.edge === 'right') {
+          const nw = Math.min(GRAPH_NODE_MAX_W, Math.max(rz.minWidth, rz.startWidth + d));
+          dispatch({ type: 'setNodeDimensions', id: rz.nodeId, width: nw });
+        } else {
+          const nw = Math.min(GRAPH_NODE_MAX_W, Math.max(rz.minWidth, rz.startWidth - d));
+          const nx = rz.startNodeX + (rz.startWidth - nw);
+          dispatch({ type: 'setNodeDimensions', id: rz.nodeId, width: nw, x: nx });
+        }
+        return;
+      }
+
       const pd = panDragRef.current;
       if (pd) {
         setView((v) => ({
@@ -250,12 +338,16 @@ export function GraphCanvas() {
         const v = viewRef.current;
         const x = (e.clientX - r.left - v.tx) / v.scale;
         const y = (e.clientY - r.top - v.ty) / v.scale;
-        dispatch({
-          type: 'moveNode',
-          id: nd.nodeId,
-          x: x - nd.grabDx,
-          y: y - nd.grabDy,
-        });
+        const primaryOrigin = nd.origins[nd.primaryId];
+        if (!primaryOrigin) return;
+        const newPrimaryX = x - nd.grabDx;
+        const newPrimaryY = y - nd.grabDy;
+        const dx = newPrimaryX - primaryOrigin.x;
+        const dy = newPrimaryY - primaryOrigin.y;
+        for (const id of Object.keys(nd.origins)) {
+          const o = nd.origins[id]!;
+          dispatch({ type: 'moveNode', id, x: o.x + dx, y: o.y + dy });
+        }
         return;
       }
       const wd = wireDragRef.current;
@@ -274,6 +366,8 @@ export function GraphCanvas() {
       pendingInputWireRef.current = null;
       setPanDrag(null);
       setNodeDrag(null);
+      resizeDragRef.current = null;
+      setResizeDrag(null);
       if (ignoreNextGlobalPointerUpRef.current) {
         ignoreNextGlobalPointerUpRef.current = false;
       } else {
@@ -290,7 +384,7 @@ export function GraphCanvas() {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dispatch, beginWireDragAt]);
+  }, [dispatch, beginWireDragAt, clientToGraph]);
 
   const startPan = useCallback((e: React.PointerEvent) => {
     if (!e.altKey && e.button !== 1) return;
@@ -303,26 +397,133 @@ export function GraphCanvas() {
     });
   }, [view.tx, view.ty]);
 
-  const startDragFromPointer = useCallback(
-    (nodeId: string, client: { clientX: number; clientY: number }) => {
-      const n = state.nodes.find((x) => x.id === nodeId);
-      if (!n) return;
-      const { x, y } = clientToGraph(client.clientX, client.clientY);
-      setNodeDrag({
-        nodeId,
-        grabDx: x - n.x,
-        grabDy: y - n.y,
+  const backdropPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      setContextMenu(null);
+      setNodeContextMenu(null);
+      startPan(e);
+      if (e.button !== 0 || e.altKey) return;
+      const t = e.target as HTMLElement;
+      if (t.closest?.('.studio-node-card') || t.closest?.('.parameter-node-frame')) return;
+      dispatch({ type: 'select', id: null });
+    },
+    [startPan, dispatch]
+  );
+
+  const worldContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest?.('.studio-node-card') || t.closest?.('.parameter-node-frame')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setNodeContextMenu(null);
+      const pasteOriginGraph = clientToGraph(e.clientX, e.clientY);
+      setContextMenu({
+        clientX: e.clientX,
+        clientY: e.clientY,
+        pasteOriginGraph,
       });
     },
-    [state.nodes, clientToGraph]
+    [clientToGraph]
+  );
+
+  const handleNodeContextMenu = useCallback(
+    (nodeId: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu(null);
+      const pasteOriginGraph = clientToGraph(e.clientX, e.clientY);
+      setNodeContextMenu({
+        nodeId,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        pasteOriginGraph,
+      });
+      dispatch({ type: 'selectMany', ids: [nodeId] });
+    },
+    [clientToGraph, dispatch]
+  );
+
+  const startDragFromPointer = useCallback(
+    (
+      nodeId: string,
+      client: { clientX: number; clientY: number; shiftKey?: boolean }
+    ) => {
+      const n = state.nodes.find((x) => x.id === nodeId);
+      if (!n) return;
+      const additive = Boolean(client.shiftKey);
+      let nextSelection: string[];
+      if (additive) {
+        const cur = state.selectedIds;
+        const i = cur.indexOf(nodeId);
+        nextSelection = i >= 0 ? cur.filter((id) => id !== nodeId) : [...cur, nodeId];
+      } else if (state.selectedIds.length > 1 && state.selectedIds.includes(nodeId)) {
+        nextSelection = [...state.selectedIds];
+      } else {
+        nextSelection = [nodeId];
+      }
+
+      const sameSelection =
+        nextSelection.length === state.selectedIds.length &&
+        nextSelection.every((id, idx) => id === state.selectedIds[idx]);
+      if (!sameSelection) {
+        dispatch({ type: 'selectMany', ids: nextSelection });
+      }
+
+      const moveIds =
+        nextSelection.includes(nodeId) && nextSelection.length > 0
+          ? nextSelection
+          : [nodeId];
+
+      const origins: Record<string, { x: number; y: number }> = {};
+      for (const id of moveIds) {
+        const node = state.nodes.find((x) => x.id === id);
+        if (node) origins[id] = { x: node.x, y: node.y };
+      }
+
+      const { x, y } = clientToGraph(client.clientX, client.clientY);
+      setNodeDrag({
+        primaryId: nodeId,
+        grabDx: x - n.x,
+        grabDy: y - n.y,
+        origins,
+      });
+    },
+    [state.nodes, state.selectedIds, clientToGraph, dispatch]
   );
 
   const moveNodeStart = useCallback(
     (nodeId: string, e: React.PointerEvent) => {
       e.preventDefault();
-      startDragFromPointer(nodeId, { clientX: e.clientX, clientY: e.clientY });
+      startDragFromPointer(nodeId, {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        shiftKey: e.shiftKey,
+      });
     },
     [startDragFromPointer]
+  );
+
+  const startNodeResize = useCallback(
+    (nodeId: string, edge: 'left' | 'right', e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dispatch({ type: 'select', id: nodeId, additive: false });
+      const n = state.nodes.find((x) => x.id === nodeId);
+      if (!n) return;
+      const { x: gx } = clientToGraph(e.clientX, e.clientY);
+      const next: NonNullable<ResizeDrag> = {
+        nodeId,
+        edge,
+        startGraphX: gx,
+        startWidth: graphNodeWidth(n),
+        startNodeX: n.x,
+        minWidth: graphNodeMinWidth(n),
+      };
+      resizeDragRef.current = next;
+      setResizeDrag(next);
+    },
+    [state.nodes, clientToGraph, dispatch]
   );
 
   const edgeTaken = useCallback(
@@ -335,6 +536,7 @@ export function GraphCanvas() {
     (nodeId: string, e: React.PointerEvent) => {
       const n = state.nodes.find((x) => x.id === nodeId);
       if (!n || (n.kind !== 'parameter' && n.kind !== 'function')) return;
+      dispatch({ type: 'select', id: nodeId, additive: false });
       const colorId = n.outputPinColor;
       const p = pinGraphPosition(n, 'out');
       e.preventDefault();
@@ -355,7 +557,7 @@ export function GraphCanvas() {
       wireDragRef.current = wd;
       setWireDrag(wd);
     },
-    [state.nodes]
+    [state.nodes, dispatch]
   );
 
   const handleInputPointerDown = useCallback(
@@ -366,6 +568,7 @@ export function GraphCanvas() {
         (ed) => ed.to.nodeId === toNodeId && ed.to.port === port
       );
       if (!incoming) return;
+      dispatch({ type: 'select', id: toNodeId, additive: false });
       const fromNode = state.nodes.find((x) => x.id === incoming.from.nodeId);
       if (!fromNode || (fromNode.kind !== 'parameter' && fromNode.kind !== 'function')) return;
       const p = pinGraphPosition(fromNode, 'out');
@@ -381,7 +584,7 @@ export function GraphCanvas() {
         startClientY: e.clientY,
       };
     },
-    [state.edges, state.nodes]
+    [state.edges, state.nodes, dispatch]
   );
 
   const handleInputUp = useCallback(
@@ -389,6 +592,7 @@ export function GraphCanvas() {
       ignoreNextGlobalPointerUpRef.current = false;
       const wd = wireDragRef.current;
       if (!wd) return;
+      dispatch({ type: 'select', id: toNodeId, additive: false });
       e.preventDefault();
       e.stopPropagation();
       const toNode = state.nodes.find((x) => x.id === toNodeId);
@@ -413,13 +617,73 @@ export function GraphCanvas() {
       setWireDrag(null);
       wireDragRef.current = null;
     },
-    [state.nodes, connectEdge, edgeTaken]
+    [state.nodes, connectEdge, edgeTaken, dispatch]
   );
 
   const ghostPath = useMemo(() => {
     if (!wireDrag) return null;
     return bezierPath(wireDrag.startX, wireDrag.startY, wireDrag.curX, wireDrag.curY);
   }, [wireDrag]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, [contenteditable=true]')) return;
+      if (contextMenuRef.current || nodeContextMenuRef.current) return;
+
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.code === 'KeyC' && !e.shiftKey) {
+        e.preventDefault();
+        dispatch({ type: 'copySelection' });
+        return;
+      }
+      if (mod && e.code === 'KeyX') {
+        e.preventDefault();
+        dispatch({ type: 'cutSelection' });
+        return;
+      }
+      if (mod && e.code === 'KeyV') {
+        e.preventDefault();
+        const c = graphViewCenter();
+        dispatch({ type: 'pasteClipboard', center: c });
+        return;
+      }
+      if (mod && e.code === 'KeyD') {
+        e.preventDefault();
+        dispatch({ type: 'duplicateSelection' });
+        return;
+      }
+      if (mod && e.code === 'KeyG') {
+        e.preventDefault();
+        dispatch({ type: 'groupSelection' });
+        return;
+      }
+      if (mod && e.code === 'KeyU') {
+        e.preventDefault();
+        dispatch({ type: 'ungroupSelection' });
+        return;
+      }
+      if (e.code === 'Delete' || e.code === 'Backspace') {
+        e.preventDefault();
+        dispatch({ type: 'deleteSelection' });
+        return;
+      }
+
+      if (e.code === 'KeyH' && e.shiftKey && mod) {
+        e.preventDefault();
+        dispatch({ type: 'toggleNodeDisabled' });
+        return;
+      }
+      if (e.code === 'KeyF' && !mod) {
+        e.preventDefault();
+        runFrameSelection();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dispatch, graphViewCenter, runFrameSelection]);
 
   const isOutputConnected = useCallback(
     (nodeId: string) =>
@@ -437,10 +701,12 @@ export function GraphCanvas() {
     <div
       ref={containerRef}
       className="flex-1 min-w-0"
+      tabIndex={0}
       style={{
         position: 'relative',
         overflow: 'hidden',
         background: 'var(--studio-canvas)',
+        outline: 'none',
       }}
       onWheel={onWheel}
     >
@@ -469,19 +735,79 @@ export function GraphCanvas() {
           transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`,
           transformOrigin: '0 0',
         }}
-        onPointerDown={startPan}
+        onPointerDown={backdropPointerDown}
+        onContextMenu={worldContextMenu}
       >
+        <svg
+          width={WORLD_W}
+          height={WORLD_H}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            zIndex: 1,
+            pointerEvents: 'none',
+            overflow: 'visible',
+          }}
+        >
+          {state.edges.map((edge) => {
+            const d = edgePath(edge, state.nodes);
+            if (!d) return null;
+            const hex = PIN_HEX[edge.colorId];
+            const wireId = `wire-${edge.id}`;
+            const fromNode = state.nodes.find((n) => n.id === edge.from.nodeId);
+            const fromDisabled = fromNode?.disabled === true;
+            const showFlow =
+              state.playMode && state.graphPlayActive && !fromDisabled;
+            return (
+              <g key={edge.id}>
+                <path
+                  id={wireId}
+                  d={d}
+                  fill="none"
+                  stroke={hex}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeOpacity={fromDisabled ? 0.5 : 1}
+                />
+                {showFlow && (
+                  <circle
+                    key={`flow-${edge.id}-${flowEpoch}`}
+                    r={NODE_INPUT_PIN_OUTER_R}
+                    fill={hex}
+                    pointerEvents="none"
+                  >
+                    <animateMotion
+                      dur={`${EDGE_FLOW_DURATION_SEC}s`}
+                      repeatCount="indefinite"
+                      rotate="0"
+                      calcMode="linear"
+                    >
+                      <mpath href={`#${wireId}`} />
+                    </animateMotion>
+                  </circle>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+
         <div
           style={{
             position: 'relative',
-            zIndex: 1,
+            zIndex: 2,
             width: WORLD_W,
             height: WORLD_H,
           }}
         >
           {state.nodes.map((node) => {
-            const selected = state.selectedId === node.id;
-            const select = () => dispatch({ type: 'select', id: node.id });
+            const selected = state.selectedIds.includes(node.id);
+            const select = (ev: React.PointerEvent) =>
+              dispatch({
+                type: 'select',
+                id: node.id,
+                additive: ev.shiftKey,
+              });
 
             if (node.kind === 'parameter') {
               return (
@@ -500,6 +826,10 @@ export function GraphCanvas() {
                   onTitleDragStart={(c) => startDragFromPointer(node.id, c)}
                   onHeaderDragPointerDown={(e) => moveNodeStart(node.id, e)}
                   onOutputPointerDown={(e) => handleOutputDown(node.id, e)}
+                  onResizeEdgePointerDown={(edge, e) =>
+                    startNodeResize(node.id, edge, e)
+                  }
+                  onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
                 />
               );
             }
@@ -571,6 +901,10 @@ export function GraphCanvas() {
                   }
                   onCollapsedInputGroupPointerDown={onCollapsedInputGroupPointerDown}
                   onCollapsedInputGroupPointerUp={onCollapsedInputGroupPointerUp}
+                  onResizeEdgePointerDown={(edge, e) =>
+                    startNodeResize(node.id, edge, e)
+                  }
+                  onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
                 />
               );
             }
@@ -590,85 +924,176 @@ export function GraphCanvas() {
                   handleInputPointerDown(node.id, 'in-0', e)
                 }
                 onInputPointerUp={(e) => handleInputUp(node.id, 'in-0', e)}
+                onResizeEdgePointerDown={(edge, e) =>
+                  startNodeResize(node.id, edge, e)
+                }
+                onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
               />
             );
           })}
         </div>
 
-        <svg
-          width={WORLD_W}
-          height={WORLD_H}
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            zIndex: 2,
-            pointerEvents: 'none',
-            overflow: 'visible',
-          }}
-        >
-          {state.edges.map((edge) => {
-            const d = edgePath(edge, state.nodes);
-            if (!d) return null;
-            const hex = PIN_HEX[edge.colorId];
-            const wireId = `wire-${edge.id}`;
-            const showFlow = state.playMode && state.graphPlayActive;
-            return (
-              <g key={edge.id}>
-                <path
-                  id={wireId}
-                  d={d}
-                  fill="none"
-                  stroke={hex}
-                  strokeWidth={2}
-                />
-                {showFlow && (
-                  <circle
-                    key={`flow-${edge.id}-${flowEpoch}`}
-                    r={NODE_INPUT_PIN_OUTER_R}
-                    fill={hex}
-                    pointerEvents="none"
-                  >
-                    <animateMotion
-                      dur={`${EDGE_FLOW_DURATION_SEC}s`}
-                      repeatCount="indefinite"
-                      rotate="0"
-                      calcMode="linear"
-                    >
-                      <mpath href={`#${wireId}`} />
-                    </animateMotion>
-                  </circle>
-                )}
-              </g>
-            );
-          })}
-          {ghostPath && wireDrag && (
+        {ghostPath && wireDrag ? (
+          <svg
+            width={WORLD_W}
+            height={WORLD_H}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              zIndex: 3,
+              pointerEvents: 'none',
+              overflow: 'visible',
+            }}
+          >
             <path
               d={ghostPath}
               fill="none"
               stroke={PIN_HEX[wireDrag.colorId]}
               strokeWidth={2}
+              strokeLinecap="round"
               opacity={0.5}
             />
-          )}
-        </svg>
+          </svg>
+        ) : null}
       </div>
 
-      <div
-        className="text-xs text-muted"
-        style={{
-          position: 'absolute',
-          left: 12,
-          bottom: 10,
-          pointerEvents: 'none',
+      <GraphNavigationGuide visible={state.showGraphGuide} />
+
+      {state.parametersEnabled ? <GraphParameterPanel /> : null}
+
+      <GraphContextMenu
+        open={contextMenu != null}
+        position={contextMenu}
+        onClose={() => setContextMenu(null)}
+        hasSelection={state.selectedIds.length > 0}
+        hasClipboard={(state.clipboard?.nodes.length ?? 0) > 0}
+        parametersEnabled={state.parametersEnabled}
+        parameterRows={state.nodes
+          .filter((n) => n.kind === 'parameter')
+          .map((n) => ({ id: n.id, title: n.title }))}
+        onInsertFunctionNode={(outputPinColor) => {
+          if (!contextMenu) return;
+          dispatch({
+            type: 'addFunctionNodeAt',
+            graphX: contextMenu.pasteOriginGraph.x,
+            graphY: contextMenu.pasteOriginGraph.y,
+            outputPinColor,
+          });
+          setContextMenu(null);
         }}
-      >
-        Scroll to pan · Ctrl/Cmd + wheel zoom · Alt+drag pan · Drag header (or title, after small
-        move) to move · Double-click node title to edit · Wiring: use Prototype Settings — with
-        click-drag off (default), click an output pin then click a matching input; with click-drag
-        on, press and drag from output to input · Pull a connected input pin to disconnect — expand
-        a node to change its input wiring when collapsed
-      </div>
+        onInsertParameterFromTemplate={(parameterId) => {
+          if (!contextMenu) return;
+          const { x, y } = contextMenu.pasteOriginGraph;
+          dispatch({
+            type: 'addParameter',
+            graphX: x,
+            graphY: y,
+            mode: 'clone',
+            cloneFromId: parameterId,
+          });
+          setContextMenu(null);
+        }}
+        onInsertParameterNew={() => {
+          if (!contextMenu) return;
+          const { x, y } = contextMenu.pasteOriginGraph;
+          dispatch({
+            type: 'addParameter',
+            graphX: x,
+            graphY: y,
+            mode: 'new',
+          });
+          setContextMenu(null);
+        }}
+        onCut={() => {
+          setContextMenu(null);
+          dispatch({ type: 'cutSelection' });
+        }}
+        onCopy={() => {
+          setContextMenu(null);
+          dispatch({ type: 'copySelection' });
+        }}
+        onPaste={() => {
+          const center = contextMenu?.pasteOriginGraph ?? graphViewCenter();
+          setContextMenu(null);
+          dispatch({ type: 'pasteClipboard', center });
+        }}
+        onDuplicate={() => {
+          setContextMenu(null);
+          dispatch({ type: 'duplicateSelection' });
+        }}
+        onDelete={() => {
+          setContextMenu(null);
+          dispatch({ type: 'deleteSelection' });
+        }}
+        onRename={() => {
+          setContextMenu(null);
+        }}
+        onFrameSelection={() => {
+          setContextMenu(null);
+          runFrameSelection();
+        }}
+        onGroup={() => {
+          setContextMenu(null);
+          dispatch({ type: 'groupSelection' });
+        }}
+        onUngroup={() => {
+          setContextMenu(null);
+          dispatch({ type: 'ungroupSelection' });
+        }}
+      />
+
+      <NodeContextMenu
+        open={nodeContextMenu != null}
+        position={nodeContextMenu}
+        onClose={() => setNodeContextMenu(null)}
+        hasClipboard={(state.clipboard?.nodes.length ?? 0) > 0}
+        onSwapNode={(outputPinColor) => {
+          if (!nodeContextMenu) return;
+          dispatch({
+            type: 'swapNodeWithFunction',
+            nodeId: nodeContextMenu.nodeId,
+            outputPinColor,
+          });
+          setNodeContextMenu(null);
+        }}
+        onCut={() => {
+          setNodeContextMenu(null);
+          dispatch({ type: 'cutSelection' });
+        }}
+        onCopy={() => {
+          setNodeContextMenu(null);
+          dispatch({ type: 'copySelection' });
+        }}
+        onPaste={() => {
+          const center = nodeContextMenu?.pasteOriginGraph ?? graphViewCenter();
+          setNodeContextMenu(null);
+          dispatch({ type: 'pasteClipboard', center });
+        }}
+        onDuplicate={() => {
+          setNodeContextMenu(null);
+          dispatch({ type: 'duplicateSelection' });
+        }}
+        onDelete={() => {
+          setNodeContextMenu(null);
+          dispatch({ type: 'deleteSelection' });
+        }}
+        onRename={() => {
+          setNodeContextMenu(null);
+        }}
+        onFrameSelection={() => {
+          setNodeContextMenu(null);
+          runFrameSelection();
+        }}
+        onGroup={() => {
+          setNodeContextMenu(null);
+          dispatch({ type: 'groupSelection' });
+        }}
+        onUngroup={() => {
+          setNodeContextMenu(null);
+          dispatch({ type: 'ungroupSelection' });
+        }}
+      />
     </div>
   );
 }

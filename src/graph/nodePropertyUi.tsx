@@ -5,7 +5,7 @@ import { Dropdown, DropdownItem } from '../foundation/Dropdown';
 import { ChevronDown12 } from '../foundation/ChevronDown12';
 import { NodePropertyFieldShell } from '../foundation/NodePropertyFieldShell';
 import { foundationLayout } from './figmaNodeTokens';
-import type { FunctionSlot } from './types';
+import type { FunctionSlot, RowPropertyType } from './types';
 
 /** Figma `.NodeProperty` field shell — `73:5672` / `73:5679` / `73:5695` (`get_design_context` on symbols). */
 const SHIFT_200 = 'rgba(208, 217, 251, 0.08)';
@@ -35,7 +35,10 @@ function Dropdown1X({ slot, onPatch }: { slot: FunctionSlot; onPatch: OnPatch })
   const v = slot.textValue ?? '';
   const value = v === '' ? NODE_PROP_DROPDOWN_EMPTY : v;
   return (
-    <div className="flex-1 min-w-0" style={{ display: 'flex', width: '100%' }}>
+    <div
+      className="flex-1 min-w-0"
+      style={{ display: 'flex', width: '100%', alignItems: 'stretch', minWidth: 0 }}
+    >
       <Dropdown
         variant="nodeProperty"
         ariaLabel={slot.label}
@@ -158,7 +161,7 @@ function InteractiveTextLine({
 
 function TextInput1X({ slot, onPatch }: { slot: FunctionSlot; onPatch: OnPatch }) {
   return (
-    <NodePropertyFieldShell>
+    <NodePropertyFieldShell style={{ flex: 1, minWidth: 0 }}>
       <InteractiveTextLine
         committed={slot.textValue}
         placeholderText={slot.placeholderText}
@@ -446,13 +449,182 @@ function Color1X({ slot, onPatch }: { slot: FunctionSlot; onPatch: OnPatch }) {
   );
 }
 
+function ParameterDrivenPropertyPreview({
+  value,
+  propertyType,
+}: {
+  value: string;
+  propertyType: RowPropertyType;
+}) {
+  switch (propertyType) {
+    case 'checkbox': {
+      const checked =
+        value.trim().toLowerCase() === 'true' ||
+        value === '1' ||
+        value.trim().toLowerCase() === 'yes';
+      return (
+        <NodePropertyFieldShell style={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <Checkbox1X checked={checked} />
+        </NodePropertyFieldShell>
+      );
+    }
+    case 'numberInput3':
+      return (
+        <NodePropertyFieldShell style={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <span
+            className="truncate"
+            style={{
+              ...textEmphasis(),
+              flex: 1,
+              minWidth: 0,
+              textAlign: 'left',
+              width: '100%',
+              display: 'block',
+            }}
+          >
+            {value}
+          </span>
+        </NodePropertyFieldShell>
+      );
+    case 'numberRange':
+      return (
+        <NodePropertyFieldShell style={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <span
+            className="truncate"
+            style={{ ...textEmphasis(), flex: 1, minWidth: 0, width: '100%' }}
+          >
+            {value}
+          </span>
+        </NodePropertyFieldShell>
+      );
+    case 'color': {
+      const fill = parseHexFill(value);
+      return (
+        <NodePropertyFieldShell style={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              paddingLeft: foundationLayout.paddingXXSmall,
+            }}
+          >
+            <div
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: 2,
+                border: '1px solid var(--studio-stroke)',
+                background: fill,
+                flexShrink: 0,
+              }}
+            />
+          </div>
+          <span className="truncate" style={{ ...textEmphasis(), flex: 1, minWidth: 0 }}>
+            {value}
+          </span>
+        </NodePropertyFieldShell>
+      );
+    }
+    case 'inputGroup':
+      return null;
+    case 'readOnly':
+      return (
+        <NodePropertyFieldShell style={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <span
+            className="truncate"
+            style={{
+              ...textEmphasis(),
+              flex: 1,
+              minWidth: 0,
+              width: '100%',
+              textAlign: 'left',
+              display: 'block',
+            }}
+          >
+            {value}
+          </span>
+        </NodePropertyFieldShell>
+      );
+    case 'material':
+      return (
+        <NodePropertyFieldShell style={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              paddingLeft: foundationLayout.paddingXXSmall,
+            }}
+          >
+            <div
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: 9999,
+                border: '1px solid var(--studio-stroke)',
+                background: 'linear-gradient(135deg, #6a7cff, #c44dff)',
+                flexShrink: 0,
+              }}
+            />
+          </div>
+          <span className="truncate" style={{ ...textEmphasis(), flex: 1, minWidth: 0 }}>
+            {value}
+          </span>
+        </NodePropertyFieldShell>
+      );
+    default:
+      return (
+        <NodePropertyFieldShell style={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <span
+            className="truncate"
+            style={{
+              ...textEmphasis(),
+              flex: 1,
+              minWidth: 0,
+              width: '100%',
+              textAlign: 'left',
+              display: 'block',
+            }}
+          >
+            {value}
+          </span>
+        </NodePropertyFieldShell>
+      );
+  }
+}
+
 type Props = {
   slot: FunctionSlot;
   onPatch: OnPatch;
+  /** When set, this row is fed by a parameter — read-only mirror at reduced opacity. */
+  parameterDrivenValue?: string | null;
 };
 
 /** Node property row: Figma `.NodeProperty` variants with graph-backed values where applicable. */
-export function NodePropertySlotControl({ slot, onPatch }: Props) {
+export function NodePropertySlotControl({ slot, onPatch, parameterDrivenValue }: Props) {
+  if (parameterDrivenValue != null) {
+    return (
+      <div
+        className="flex-1 min-w-0"
+        style={{
+          display: 'flex',
+          width: '100%',
+          alignItems: 'stretch',
+          minWidth: 0,
+          opacity: 0.5,
+          pointerEvents: 'none',
+        }}
+        aria-disabled
+        title="Controlled by a parameter. Disconnect the incoming wire to edit this input."
+      >
+        <ParameterDrivenPropertyPreview
+          value={parameterDrivenValue}
+          propertyType={slot.propertyType}
+        />
+      </div>
+    );
+  }
   switch (slot.propertyType) {
     case 'dropdown':
       return <Dropdown1X slot={slot} onPatch={onPatch} />;
@@ -470,6 +642,17 @@ export function NodePropertySlotControl({ slot, onPatch }: Props) {
       return <Material1X slot={slot} onPatch={onPatch} />;
     case 'color':
       return <Color1X slot={slot} onPatch={onPatch} />;
+    case 'readOnly':
+      return (
+        <div
+          className="flex-1 min-w-0"
+          style={{
+            minHeight: foundationLayout.contentMinHeight,
+            boxSizing: 'border-box',
+          }}
+          aria-hidden
+        />
+      );
     case 'inputGroup':
       return null;
   }

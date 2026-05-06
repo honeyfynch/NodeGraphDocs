@@ -1,6 +1,12 @@
+import { useGraph } from '../GraphContext';
+import {
+  findIncomingParameterSource,
+  parameterDisplayValue,
+} from '../graphWiring';
 import { foundationLayout, nodeLabelColumn, nodeRow } from '../figmaNodeTokens';
 import {
-  NODE_W,
+  graphNodeWidth,
+  nodeHeight,
   ROW_H,
   layoutFunctionInputPorts,
   portsForInputGroupSlot,
@@ -10,6 +16,7 @@ import { NODE_HEADER_HEX } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodePropertySlotControl } from '../nodePropertyUi';
 import { NodeShell } from '../NodeShell';
+import { NodeResizeEdges } from '../NodeResizeEdges';
 import { Pin } from '../Pin';
 import chevronCollapsedUrl from '../../assets/icons/node-header-chevron-collapsed.svg?url';
 import chevronExpandedUrl from '../../assets/icons/node-header-chevron-expanded.svg?url';
@@ -19,7 +26,7 @@ type Props = {
   selected: boolean;
   inputConnected: (port: `in-${number}`) => boolean;
   outputConnected: boolean;
-  onSelect: () => void;
+  onSelect: (e: React.PointerEvent) => void;
   onToggleExpand: () => void;
   onTitleCommit: (title: string) => void;
   onTitleDragStart: (start: { clientX: number; clientY: number }) => void;
@@ -35,6 +42,8 @@ type Props = {
   ) => void;
   onCollapsedInputGroupPointerDown?: (groupSlotIndex: number, e: React.PointerEvent) => void;
   onCollapsedInputGroupPointerUp?: (groupSlotIndex: number, e: React.PointerEvent) => void;
+  onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
+  onNodeContextMenu?: (e: React.MouseEvent) => void;
 };
 
 function groupExpanded(slot: FunctionSlot): boolean {
@@ -43,6 +52,16 @@ function groupExpanded(slot: FunctionSlot): boolean {
 
 function childSlots(slot: FunctionSlot): FunctionSlot[] {
   return slot.inputGroupChildSlots ?? [];
+}
+
+/** Label + property column when node is disabled (input pins use {@link dimInputPinWrapper}). */
+function dimRowContent(disabled: boolean) {
+  return disabled ? 0.5 : 1;
+}
+
+/** Disconnected input pins dim with the node; connected pins stay full opacity. */
+function dimInputPinWrapper(disabled: boolean, connected: boolean) {
+  return disabled && !connected ? 0.5 : 1;
 }
 
 export function FunctionNodeView({
@@ -62,8 +81,13 @@ export function FunctionNodeView({
   onInputGroupChildPatch,
   onCollapsedInputGroupPointerDown,
   onCollapsedInputGroupPointerUp,
+  onResizeEdgePointerDown,
+  onNodeContextMenu,
 }: Props) {
+  const { state: graphState } = useGraph();
   const portLayouts = layoutFunctionInputPorts(node);
+  const w = graphNodeWidth(node);
+  const h = nodeHeight(node);
 
   const headerPin = (
     <div
@@ -72,57 +96,82 @@ export function FunctionNodeView({
         onOutputPointerDown(e);
       }}
     >
-      <Pin colorId={node.outputPinColor} connected={outputConnected} />
+      <Pin
+        colorId={node.outputPinColor}
+        connected={outputConnected}
+        clipOuterStrokeOn="right"
+      />
     </div>
   );
 
-  const renderNormalRow = (slot: FunctionSlot, slotIndex: number, port: `in-${number}`) => (
-    <div
-      key={`${node.id}-slot-${slotIndex}`}
-      style={{
-        position: 'relative',
-        minHeight: ROW_H,
-        ...nodeRow,
-      }}
-    >
+  const parameterDrivenForPort = (port: `in-${number}`) => {
+    const src = findIncomingParameterSource(graphState.nodes, graphState.edges, node.id, port);
+    return src ? parameterDisplayValue(src) : undefined;
+  };
+
+  const renderNormalRow = (slot: FunctionSlot, slotIndex: number, port: `in-${number}`) => {
+    const conn = inputConnected(port);
+    return (
       <div
+        key={`${node.id}-slot-${slotIndex}`}
         style={{
-          position: 'absolute',
-          left: 0,
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-        }}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onInputPointerDown(port, e);
-        }}
-        onPointerUp={(e) => {
-          e.stopPropagation();
-          onInputPointerUp(port, e);
+          position: 'relative',
+          minHeight: ROW_H,
+          ...nodeRow,
         }}
       >
-        <Pin colorId={slot.inputPinColor} connected={inputConnected(port)} />
-      </div>
-      <div className="text-sm text-muted shrink-0" style={nodeLabelColumn}>
-        <span
-          className="truncate"
-          style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            opacity: dimInputPinWrapper(Boolean(node.disabled), conn),
+          }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onInputPointerDown(port, e);
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            onInputPointerUp(port, e);
+          }}
         >
-          {slot.label}
-        </span>
+          <Pin
+            colorId={slot.inputPinColor}
+            connected={conn}
+            clipOuterStrokeOn="left"
+          />
+        </div>
+        <div
+          className="text-sm text-muted shrink-0"
+          style={{ ...nodeLabelColumn, opacity: dimRowContent(Boolean(node.disabled)) }}
+        >
+          <span
+            className="truncate"
+            style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
+          >
+            {slot.label}
+          </span>
+        </div>
+        <div
+          className="flex-1 min-w-0"
+          style={{
+            minHeight: foundationLayout.contentMinHeight,
+            display: 'flex',
+            alignItems: 'center',
+            opacity: dimRowContent(Boolean(node.disabled)),
+          }}
+        >
+          <NodePropertySlotControl
+            slot={slot}
+            onPatch={(patch) => onSlotPatch(slotIndex, patch)}
+            parameterDrivenValue={parameterDrivenForPort(port)}
+          />
+        </div>
       </div>
-      <div
-        className="flex-1 min-w-0"
-        style={{
-          minHeight: foundationLayout.contentMinHeight,
-          display: 'flex',
-          alignItems: 'center',
-        }}
-      >
-        <NodePropertySlotControl slot={slot} onPatch={(patch) => onSlotPatch(slotIndex, patch)} />
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderInputGroup = (slot: FunctionSlot, slotIndex: number) => {
     const children = childSlots(slot);
@@ -160,6 +209,7 @@ export function FunctionNodeView({
                 left: 0,
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
+                opacity: dimInputPinWrapper(Boolean(node.disabled), stubConnected),
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -170,53 +220,63 @@ export function FunctionNodeView({
                 onCollapsedInputGroupPointerUp?.(slotIndex, e);
               }}
             >
-              <Pin colorId={groupPin} connected={stubConnected} />
+              <Pin
+                colorId={groupPin}
+                connected={stubConnected}
+                clipOuterStrokeOn="left"
+              />
             </div>
           ) : null}
-          <button
-            type="button"
-            className="studio-node-chevron"
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse inputs' : 'Expand inputs'}
-            style={{
-              flexShrink: 0,
-              width: 24,
-              height: 24,
-              padding: 0,
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSlotPatch(slotIndex, { inputGroupExpanded: !expanded });
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
+          <div
+            className="flex-row items-center gap-sm flex-1 min-w-0"
+            style={{ opacity: dimRowContent(Boolean(node.disabled)) }}
           >
-            <img
-              src={expanded ? chevronExpandedUrl : chevronCollapsedUrl}
-              width={12}
-              height={12}
-              alt=""
-              draggable={false}
-            />
-          </button>
-          <div className="flex-1 min-w-0 flex-row items-center text-sm text-muted">
-            <span
-              className="truncate"
-              style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
+            <button
+              type="button"
+              className="studio-node-chevron"
+              aria-expanded={expanded}
+              aria-label={expanded ? 'Collapse inputs' : 'Expand inputs'}
+              style={{
+                flexShrink: 0,
+                width: 24,
+                height: 24,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSlotPatch(slotIndex, { inputGroupExpanded: !expanded });
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
             >
-              {slot.label}
-            </span>
+              <img
+                src={expanded ? chevronExpandedUrl : chevronCollapsedUrl}
+                width={12}
+                height={12}
+                alt=""
+                draggable={false}
+              />
+            </button>
+            <div className="flex-1 min-w-0 flex-row items-center text-sm text-muted">
+              <span
+                className="truncate"
+                style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
+              >
+                {slot.label}
+              </span>
+            </div>
           </div>
         </div>
         {expanded
           ? children.map((child, childIndex) => {
               const port = groupPorts[childIndex];
               if (!port) return null;
+              const childConn = inputConnected(port);
               return (
                 <div
                   key={`${node.id}-ig-${slotIndex}-c-${childIndex}`}
@@ -232,6 +292,7 @@ export function FunctionNodeView({
                       left: 0,
                       top: '50%',
                       transform: 'translate(-50%, -50%)',
+                      opacity: dimInputPinWrapper(Boolean(node.disabled), childConn),
                     }}
                     onPointerDown={(e) => {
                       e.stopPropagation();
@@ -242,9 +303,16 @@ export function FunctionNodeView({
                       onInputPointerUp(port, e);
                     }}
                   >
-                    <Pin colorId={groupPin} connected={inputConnected(port)} />
+                    <Pin
+                      colorId={groupPin}
+                      connected={childConn}
+                      clipOuterStrokeOn="left"
+                    />
                   </div>
-                  <div className="text-sm text-muted shrink-0" style={nodeLabelColumn}>
+                  <div
+                    className="text-sm text-muted shrink-0"
+                    style={{ ...nodeLabelColumn, opacity: dimRowContent(Boolean(node.disabled)) }}
+                  >
                     <span
                       className="truncate"
                       style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
@@ -258,11 +326,15 @@ export function FunctionNodeView({
                       minHeight: foundationLayout.contentMinHeight,
                       display: 'flex',
                       alignItems: 'center',
+                      opacity: dimRowContent(Boolean(node.disabled)),
                     }}
                   >
                     <NodePropertySlotControl
                       slot={child}
                       onPatch={(patch) => onInputGroupChildPatch(slotIndex, childIndex, patch)}
+                      parameterDrivenValue={
+                        port ? parameterDrivenForPort(port) : undefined
+                      }
                     />
                   </div>
                 </div>
@@ -274,8 +346,22 @@ export function FunctionNodeView({
   };
 
   return (
-    <div className="absolute" style={{ left: node.x, top: node.y, width: NODE_W }}>
-      <div style={{ position: 'relative', zIndex: 1 }}>
+    <div
+      className="absolute"
+      style={{
+        left: node.x,
+        top: node.y,
+        width: w,
+        zIndex: selected ? 4 : 1,
+      }}
+      onContextMenu={(e) => {
+        onNodeContextMenu?.(e);
+      }}
+    >
+      <div style={{ position: 'relative', zIndex: 1, minHeight: h }}>
+        {onResizeEdgePointerDown ? (
+          <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
+        ) : null}
         <NodeShell
           title={node.title}
           titleContent={
@@ -288,12 +374,13 @@ export function FunctionNodeView({
           frameVariant={node.frameVariant}
           headerFillOverride={NODE_HEADER_HEX[node.outputPinColor]}
           selected={selected}
-          width={NODE_W}
+          width={w}
           expanded={node.expanded}
           onToggleExpand={onToggleExpand}
           headerTrailing={headerPin}
           onHeaderDragPointerDown={onHeaderDragPointerDown}
           onBackgroundPointerDown={onSelect}
+          dimHeaderChrome={Boolean(node.disabled)}
         >
           {node.expanded ? (
             <>

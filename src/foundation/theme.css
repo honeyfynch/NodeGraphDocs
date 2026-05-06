@@ -17,6 +17,10 @@
   --studio-stroke: #d0d9fb1f;
   /** Selected node frame — `Color/Content/Emphasis` / `bg/system-contrast` (same file variables). */
   --studio-stroke-system-contrast: #f7f7f8;
+  /** Figma Tooltip `113:20106` / inverse surface (Node Graph Draft). */
+  --graph-pin-tooltip-bg: #ffffff;
+  --graph-pin-tooltip-text: #202227;
+  --graph-pin-tooltip-shadow: rgba(4, 4, 8, 0.25);
   --studio-content-default: #d5d7dd;
   --studio-content-muted: #bcbec8;
   --studio-content-emphasis: #f7f7f8;
@@ -33,10 +37,16 @@
    * Figma refs: `73:26702` `.NodeRow` (row paddingY 4px = `--foundation-padding-xsmall` in `nodeRow`),
    * `73:5672` / `73:5695` / `73:5685` `.NodeProperty` variants. `--foundation-padding-xxsmall` stays 2px for inner control insets.
    */
+  /** Figma `Gap/XXSmall` — Guide `133:7964` vertical stack between rows/sections. */
+  --foundation-gap-xxsmall: 2px;
   --foundation-gap-xsmall: 4px;
+  /** Figma `Gap/Medium` — Guide `133:7964` row main gap + inspector `.gap-md` scale. */
+  --foundation-gap-medium: 12px;
   --foundation-padding-xxsmall: 2px;
   --foundation-padding-xsmall: 4px;
   --foundation-padding-small: 8px;
+  /** Figma `Padding/Medium` — Guide menu row + `.MenuSectionTitle` horizontal inset. */
+  --foundation-padding-medium: 12px;
   --foundation-content-gap: 4px;
   --foundation-content-min-height: 24px;
   --foundation-gap-numeric-cells: 6px;
@@ -197,6 +207,89 @@ body.graph-app-body {
 }
 .studio-node-card--selected {
   border-color: var(--studio-stroke-system-contrast);
+}
+
+/* Pin color tooltip — Figma `113:20106` (inverse surface, BodySmall, TransientLow-style shadow). */
+.graph-pin-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+/* Graph pin: outer 1px surface ring split out and clipped so it only shows over node bounds. */
+.graph-pin-root {
+  position: relative;
+  display: inline-flex;
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: center;
+}
+.graph-pin-outer-ring-slot {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.graph-pin-outer-ring-slot--no-clip {
+  clip-path: none;
+}
+.graph-pin-outer-ring-slot--clip-right {
+  /*
+   * Hide outer ring only on the wire/canvas side. Inset must stay tighter than a 50% bisect so
+   * the ring still paints over the node’s 1px border (selection uses `border-color` on the card).
+   */
+  clip-path: inset(-4px 18% -4px -4px);
+}
+.graph-pin-outer-ring-slot--clip-left {
+  clip-path: inset(-4px -4px -4px 18%);
+}
+.graph-pin-outer-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px var(--studio-surface-0);
+}
+.graph-pin-core {
+  position: relative;
+  z-index: 1;
+}
+
+.graph-pin-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  max-width: 320px;
+  padding: 4px 6px;
+  border-radius: var(--studio-radius);
+  background: var(--graph-pin-tooltip-bg);
+  color: var(--graph-pin-tooltip-text);
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodysmall-font-size);
+  line-height: var(--alpha-text-bodysmall-line-height);
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+  box-shadow:
+    0 2px 4px 0 var(--graph-pin-tooltip-shadow),
+    0 10px 20px 0 var(--graph-pin-tooltip-shadow);
+}
+
+.graph-pin-wrap:hover .graph-pin-tooltip {
+  opacity: 1;
+  visibility: visible;
 }
 
 /*
@@ -551,7 +644,10 @@ body.graph-app-body {
 }
 
 .select-root-wrap--node-property {
-  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  align-items: stretch;
   justify-content: center;
   min-height: var(--foundation-content-min-height);
 }
@@ -623,8 +719,8 @@ body.graph-app-body {
   box-shadow: none;
   align-items: center;
   line-height: 1;
-  /* Hug intrinsic width up to the property cell; truncate label so the chevron stays inside. */
-  width: max-content;
+  /* Fill the property column like `.node-property-content-area` + text input (value truncates before chevron). */
+  width: 100%;
   max-width: 100%;
   min-width: 0;
 }

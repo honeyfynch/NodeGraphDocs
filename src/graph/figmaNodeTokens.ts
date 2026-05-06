@@ -24,10 +24,13 @@ export {
 export { NODE_GRAPH_RECIPE_COMPONENT_KEYS as DESIGN_ASSIST_COMPONENT_RECIPE_KEYS } from './nodeGraphDesignAssistRecipes';
 
 export const foundationLayout = {
+  gapXXSmall: 'var(--foundation-gap-xxsmall)',
   gapXSmall: 'var(--foundation-gap-xsmall)',
+  gapMedium: 'var(--foundation-gap-medium)',
   paddingXXSmall: 'var(--foundation-padding-xxsmall)',
   paddingXSmall: 'var(--foundation-padding-xsmall)',
   paddingSmall: 'var(--foundation-padding-small)',
+  paddingMedium: 'var(--foundation-padding-medium)',
   contentGap: 'var(--foundation-content-gap)',
   contentMinHeight: 'var(--foundation-content-min-height)',
   gapNumericCells: 'var(--foundation-gap-numeric-cells)',

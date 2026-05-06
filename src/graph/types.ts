@@ -15,6 +15,8 @@ export type RowPropertyType =
   | 'numberRange'
   | 'material'
   | 'color'
+  /** Label column only — no control in the property area (configurable in the inspector). */
+  | 'readOnly'
   /** Figma `73:5651` Input Group — nested rows; one shared input pin color on the parent slot. */
   | 'inputGroup';
 
@@ -27,6 +29,7 @@ export const ROW_PROPERTY_TYPE_IDS: RowPropertyType[] = [
   'numberRange',
   'material',
   'color',
+  'readOnly',
   'inputGroup',
 ];
 
@@ -43,6 +46,7 @@ export const ROW_PROPERTY_FIGMA_LABEL: Record<RowPropertyType, string> = {
   numberRange: '1X NumberRange',
   material: '1X Material',
   color: '1X Color',
+  readOnly: 'Read-only',
   inputGroup: 'Input Group',
 };
 
@@ -58,7 +62,7 @@ export function rowPropertyUsesInputTextPlaceholder(type: RowPropertyType): bool
   );
 }
 
-/** Older builds used `singleValue` / `readonly`. */
+/** Older builds used `singleValue` / `readonly` (lowercase — mapped away from the new `readOnly` type). */
 export function migrateRowPropertyType(raw: string): RowPropertyType {
   const legacy: Record<string, RowPropertyType> = {
     singleValue: 'textInput',
@@ -160,6 +164,18 @@ export type ParameterNode = {
   outputPinColor: PinColorId;
   /** When false, only the header row is shown (Figma collapse). */
   expanded: boolean;
+  /**
+   * When true, node renders dimmed; edges from this node do not show play-mode flow animation.
+   * Toggle with ⌘⇧H (Ctrl⇧H on Windows) on the canvas.
+   */
+  disabled?: boolean;
+  /** Custom width (px); default matches Figma chip width when unset. */
+  width?: number;
+  /**
+   * Carried value when the chip is expanded; wired inputs mirror this until the edge is removed.
+   * Empty / unset displays as the label “Value” in previews.
+   */
+  parameterValue?: string;
 };
 
 export type FunctionNode = {
@@ -173,6 +189,10 @@ export type FunctionNode = {
   slots: FunctionSlot[];
   outputPinColor: PinColorId;
   expanded: boolean;
+  /** See `ParameterNode.disabled`. */
+  disabled?: boolean;
+  /** Custom card width (px); default `NODE_W` when unset. */
+  width?: number;
 };
 
 export type OutputNode = {
@@ -184,6 +204,10 @@ export type OutputNode = {
   frameVariant: FrameVariant;
   inputPinColor: PinColorId;
   expanded: boolean;
+  /** See `ParameterNode.disabled` (output has no outgoing edges; dimming still applies). */
+  disabled?: boolean;
+  /** Custom card width (px); default `NODE_W` when unset. */
+  width?: number;
 };
 
 export type GraphNode = ParameterNode | FunctionNode | OutputNode;

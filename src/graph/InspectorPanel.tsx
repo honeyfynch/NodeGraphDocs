@@ -10,6 +10,11 @@ import {
   formatPinColorOption,
   type PinColorId,
 } from './pinColors';
+import {
+  findIncomingParameterSource,
+  portForInputGroupChild,
+  portForTopLevelFunctionSlot,
+} from './graphWiring';
 import { useGraph } from './GraphContext';
 import type { FrameVariant, FunctionSlot, RowPropertyType } from './types';
 import {
@@ -24,11 +29,16 @@ const FRAME_OPTS: FrameVariant[] = ['standard', 'emphasis', 'muted'];
 
 export function InspectorPanel() {
   const { state, dispatch } = useGraph();
-  const sel = state.selectedId;
+  const sel =
+    state.selectedIds.length > 0
+      ? state.selectedIds[state.selectedIds.length - 1]!
+      : null;
   const node = sel ? state.nodes.find((n) => n.id === sel) : null;
 
   const edgesHere = state.edges.filter(
-    (e) => e.from.nodeId === sel || e.to.nodeId === sel
+    (e) =>
+      state.selectedIds.includes(e.from.nodeId) ||
+      state.selectedIds.includes(e.to.nodeId)
   );
 
   return (
@@ -48,18 +58,16 @@ export function InspectorPanel() {
         <NodePropertyFieldShell>
           <Checkbox
             label="Play mode"
-            hint="When on, use the play/pause control on the canvas to run a dummy graph dataflow preview (wiring only for now)."
             checked={state.playMode}
             onCheckedChange={(value) => dispatch({ type: 'setPlayMode', value })}
           />
         </NodePropertyFieldShell>
         <NodePropertyFieldShell>
           <Checkbox
-            label="Click-drag to connect pins"
-            hint="Off (default): click an output pin, move the pointer, then click a matching input pin — no drag hold. On: press and drag from output to input as before."
-            checked={state.clickDragPinWiring}
+            label="Parameters"
+            checked={state.parametersEnabled}
             onCheckedChange={(value) =>
-              dispatch({ type: 'setClickDragPinWiring', value })
+              dispatch({ type: 'setParametersEnabled', value })
             }
           />
         </NodePropertyFieldShell>
@@ -97,6 +105,19 @@ export function InspectorPanel() {
                   type: 'updateParameter',
                   id: node.id,
                   patch: { title: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <Field label="Parameter value">
+            <TextInput
+              variant="nodeProperty"
+              value={node.parameterValue ?? ''}
+              onChange={(e) =>
+                dispatch({
+                  type: 'updateParameter',
+                  id: node.id,
+                  patch: { parameterValue: e.target.value },
                 })
               }
             />
@@ -151,7 +172,9 @@ export function InspectorPanel() {
                 })
               }
             >
-              <DropdownItem value="parameter">Parameter</DropdownItem>
+              {state.parametersEnabled ? (
+                <DropdownItem value="parameter">Parameter</DropdownItem>
+              ) : null}
               <DropdownItem value="function">Function</DropdownItem>
             </Dropdown>
           </Field>
@@ -204,8 +227,9 @@ export function InspectorPanel() {
             </Dropdown>
           </Field>
 
-          {node.slots.map((slot, i) =>
-            slot.propertyType === 'inputGroup' ? (
+          {node.slots.map((slot, i) => {
+            if (slot.propertyType === 'inputGroup') {
+              return (
               <div
                 key={`slot-${i}`}
                 className="flex-col gap-sm p-sm border-studio radius-sm"
@@ -298,12 +322,33 @@ export function InspectorPanel() {
                     }
                   />
                 </NodePropertyFieldShell>
-                {(slot.inputGroupChildSlots ?? []).map((child, ci) => (
+                {(slot.inputGroupChildSlots ?? []).map((child, ci) => {
+                  const childPort = portForInputGroupChild(node, i, ci);
+                  const childDriven = !!(
+                    childPort &&
+                    findIncomingParameterSource(
+                      state.nodes,
+                      state.edges,
+                      node.id,
+                      childPort
+                    )
+                  );
+                  return (
                   <div
                     key={`slot-${i}-child-${ci}`}
                     className="flex-col gap-sm p-sm border-studio radius-sm"
-                    style={{ background: 'rgba(208,217,251,0.06)' }}
+                    style={{
+                      background: 'rgba(208,217,251,0.06)',
+                      ...(childDriven
+                        ? { opacity: 0.5, pointerEvents: 'none' as const }
+                        : {}),
+                    }}
                   >
+                    {childDriven ? (
+                      <div className="text-xs text-muted">
+                        Wired from a parameter — disconnect on the graph to edit this input.
+                      </div>
+                    ) : null}
                     <div className="text-xs font-semibold text-emphasis">Child {ci + 1}</div>
                     <Field label="Label">
                       <TextInput
@@ -359,14 +404,30 @@ export function InspectorPanel() {
                       </Field>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
-            ) : (
+              );
+            }
+            const slotPort = portForTopLevelFunctionSlot(node, i);
+            const slotDriven = !!(
+              slotPort &&
+              findIncomingParameterSource(state.nodes, state.edges, node.id, slotPort)
+            );
+            return (
               <div
                 key={`slot-${i}`}
                 className="flex-col gap-sm p-sm border-studio radius-sm"
-                style={{ background: 'rgba(208,217,251,0.04)' }}
+                style={{
+                  background: 'rgba(208,217,251,0.04)',
+                  ...(slotDriven ? { opacity: 0.5, pointerEvents: 'none' as const } : {}),
+                }}
               >
+                {slotDriven ? (
+                  <div className="text-xs text-muted">
+                    Wired from a parameter — disconnect on the graph to edit.
+                  </div>
+                ) : null}
                 <div className="text-xs font-semibold text-emphasis">Slot {i + 1}</div>
                 <Field label="Label">
                   <TextInput variant="nodeProperty"
@@ -437,8 +498,8 @@ export function InspectorPanel() {
                   </Dropdown>
                 </Field>
               </div>
-            )
-          )}
+            );
+          })}
         </div>
       )}
 
@@ -523,6 +584,28 @@ export function InspectorPanel() {
           ))}
         </div>
       )}
+
+      <div className="p-md flex-col gap-sm border-studio border-t">
+        <div className="text-xs font-semibold text-emphasis">Experimental Settings</div>
+        <NodePropertyFieldShell>
+          <Checkbox
+            label="Show guide"
+            checked={state.showGraphGuide}
+            onCheckedChange={(value) =>
+              dispatch({ type: 'setShowGraphGuide', value })
+            }
+          />
+        </NodePropertyFieldShell>
+        <NodePropertyFieldShell>
+          <Checkbox
+            label="Click-drag to connect pins"
+            checked={state.clickDragPinWiring}
+            onCheckedChange={(value) =>
+              dispatch({ type: 'setClickDragPinWiring', value })
+            }
+          />
+        </NodePropertyFieldShell>
+      </div>
     </aside>
   );
 }

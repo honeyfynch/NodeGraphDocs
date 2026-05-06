@@ -27,6 +27,8 @@ export const NODE_GRAPH_RECIPE_COMPONENT_KEYS = {
   nodeRow: 'node-graph.node-row',
   contentArea: 'node-graph.content-area',
   nodeProperty: 'node-graph.node-property',
+  /** Bottom-left Guide panel (`133:7964`) — Navigation + Shortcuts menu. */
+  graphGuide: 'node-graph.graph-guide',
 } as const;
 
 /**
@@ -34,10 +36,15 @@ export const NODE_GRAPH_RECIPE_COMPONENT_KEYS = {
  * `--studio-radius` (4px) for ContentArea corners.
  */
 export const FOUNDATION_NODE_GRAPH_SPACING_PX = {
+  gapXXSmall: 2,
   gapXSmall: 4,
+  /** Figma `Gap/Medium` — label column ↔ trailing accessory on Guide menu rows. */
+  gapMedium: 12,
   paddingXXSmall: 2,
   paddingXSmall: 4,
   paddingSmall: 8,
+  /** Figma `Padding/Medium` — menu row + section title horizontal inset on Guide `133:7964`. */
+  paddingMedium: 12,
   contentGap: 4,
   contentMinHeight: 24,
   gapNumericCells: 6,
@@ -52,10 +59,13 @@ export const FOUNDATION_NODE_GRAPH_SPACING_PX = {
  * for 4px corners on ContentArea / number range).
  */
 export const FOUNDATION_NODE_GRAPH_CSS_VAR_VALUES = {
+  '--foundation-gap-xxsmall': FOUNDATION_NODE_GRAPH_SPACING_PX.gapXXSmall,
   '--foundation-gap-xsmall': FOUNDATION_NODE_GRAPH_SPACING_PX.gapXSmall,
+  '--foundation-gap-medium': FOUNDATION_NODE_GRAPH_SPACING_PX.gapMedium,
   '--foundation-padding-xxsmall': FOUNDATION_NODE_GRAPH_SPACING_PX.paddingXXSmall,
   '--foundation-padding-xsmall': FOUNDATION_NODE_GRAPH_SPACING_PX.paddingXSmall,
   '--foundation-padding-small': FOUNDATION_NODE_GRAPH_SPACING_PX.paddingSmall,
+  '--foundation-padding-medium': FOUNDATION_NODE_GRAPH_SPACING_PX.paddingMedium,
   '--foundation-content-gap': FOUNDATION_NODE_GRAPH_SPACING_PX.contentGap,
   '--foundation-content-min-height': FOUNDATION_NODE_GRAPH_SPACING_PX.contentMinHeight,
   '--foundation-gap-numeric-cells': FOUNDATION_NODE_GRAPH_SPACING_PX.gapNumericCells,
@@ -78,6 +88,7 @@ export const FOUNDATION_NODE_GRAPH_RULE_SUMMARY: readonly string[] = [
   'Use Padding.Small (8px) horizontal and Padding.XSmall (4px) vertical on `.NodeRow` outer padding.',
   'Use Padding.XSmall (4px) for label column inset and ContentArea horizontal padding.',
   'Use dedicated 6px gap between 3× NumberInput cells (Figma `gap` token default on wrapperContent).',
+  'Guide panel `133:7964`: outer Padding.Small 8px; vertical stack Gap.XXSmall 2px; menu rows Padding.Medium 12px horizontal + Padding.XSmall 4px vertical; label↔trailing Gap.Medium 12px; section titles height 24px; row min-height 25px; backplate Color/Surface/Surface_200; stroke Color/Stroke/Default.',
   'Do not replace component padding with ad hoc values unless matching an updated Figma export.',
 ];
 
@@ -109,6 +120,15 @@ export const NODE_GRAPH_DESIGN_ASSIST_RECIPE_SNAPSHOTS: readonly NodeGraphDesign
       notes:
         'Figma component set .NodeProperty 73:5669 (variants 73:5672, 73:5679, 73:5674, 73:5695, 73:5685, etc.). Root width 212px in library; on canvas sits in .NodeRow input column with flex-1. Variant-specific: 3X NumberInput uses gap 6px between cells (--foundation-gap-numeric-cells). 1X NumberRange: height 24px, pl 4px (gap/xsmall), pr 6px, py 4px (padding/xsmall), inner numeric placeholder pl 2px (--foundation-padding-xxsmall). Leading accessory (object ref): pl 2px before 12px icon.',
       confidence: 0.92,
+    },
+    {
+      componentKey: NODE_GRAPH_RECIPE_COMPONENT_KEYS.graphGuide,
+      capability: 'layout.spacing',
+      prerequisites: {},
+      targetHints: [{ type: 'node', identifier: '133:7964' }],
+      notes:
+        'Figma Guide `133:7964` (get_design_context + get_variable_defs). Frame 260×292; outer p Padding.Small 8px; column gap Gap.XXSmall 2px; drop-shadow 0 4px 2px rgba(0,0,0,0.25). Menu fill Color/Surface/Surface_200 (#202227); border Stroke/Standard 1px Color/Stroke/Default. Section titles (.MenuSectionTitle): Typography CaptionSmall 10px semibold, Color/Content/Default, h 24px, px Padding.Medium 12px. Menu rows: BodySmall 12px regular; row label Color/Content/Emphasis; hotkey text Color/Content/Muted, leading 1 (line-height 1); py Padding.XSmall 4px; px Padding.Medium 12px; gap Gap.Medium 12px between text column and trailing; Radius.Small 4px on row; trailing icons 16px (uiblox mouse/scroll + mouse/clickRight SVGs). Divider: py Padding.XSmall 4px, 1px stroke default @ 12% opacity.',
+      confidence: 0.96,
     },
   ];
 

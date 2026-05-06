@@ -1,0 +1,7 @@
+<!-- Exported from Figma Node Graph Draft `133:7964` via Dev Mode asset `5cfc37b907d59621f27211186d69c65d7c95cfe9.svg` (@uiblox.icons/controls/mouse/clickRight). -->
+<svg viewBox="0 0 11 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M11 5C11 2.23858 8.76142 0 6 0H5C2.23858 0 0 2.23858 0 5V9C0 11.7614 2.23858 14 5 14H6C8.76142 14 11 11.7614 11 9V5ZM5.5 1V4.5C5.5 4.77614 5.72386 5 6 5H10V9C10 11.2091 8.20914 13 6 13H5C2.79086 13 1 11.2091 1 9V5C1 2.79086 2.79086 1 5 1H5.5Z"
+    fill="currentColor"
+  />
+</svg>
