@@ -22,6 +22,8 @@ const PARAMETER_CHIP_INNER_H = PARAMETER_CHIP_H - 2;
 type Props = {
   node: ParameterNode;
   selected: boolean;
+  /** Experimental progressive connections: whole-node dim while routing a wire (default 1). */
+  progressiveCardOpacity?: number;
   outputConnected: boolean;
   onSelect: (e: React.PointerEvent) => void;
   onToggleExpand: () => void;
@@ -43,6 +45,7 @@ type Props = {
 export function ParameterNodeView({
   node,
   selected,
+  progressiveCardOpacity = 1,
   outputConnected,
   onSelect,
   onToggleExpand,
@@ -67,6 +70,7 @@ export function ParameterNodeView({
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
+        opacity: progressiveCardOpacity,
       }}
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);

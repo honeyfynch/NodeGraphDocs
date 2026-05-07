@@ -17,6 +17,10 @@ import {
   pinGraphPosition,
   portsForInputGroupSlot,
 } from './geometry';
+import {
+  progressiveInputPinMultiplier,
+  progressiveWholeNodeOpacity,
+} from './graphProgressiveConnections';
 import { PIN_HEX, type PinColorId } from './pinColors';
 import { ParameterNodeView } from './nodes/ParameterNodeView';
 import { FunctionNodeView } from './nodes/FunctionNodeView';
@@ -810,11 +814,17 @@ export function GraphCanvas() {
               });
 
             if (node.kind === 'parameter') {
+              const progressiveCardOpacity = progressiveWholeNodeOpacity(
+                node,
+                wireDrag,
+                state.progressiveConnections
+              );
               return (
                 <ParameterNodeView
                   key={node.id}
                   node={node}
                   selected={selected}
+                  progressiveCardOpacity={progressiveCardOpacity}
                   outputConnected={isOutputConnected(node.id)}
                   onSelect={select}
                   onToggleExpand={() =>
@@ -861,11 +871,25 @@ export function GraphCanvas() {
                 );
                 if (free) handleInputUp(node.id, free, e);
               };
+              const progressiveCardOpacity = progressiveWholeNodeOpacity(
+                node,
+                wireDrag,
+                state.progressiveConnections
+              );
+              const progressiveInputPinMult = (port: `in-${number}`) =>
+                progressiveInputPinMultiplier(
+                  node,
+                  port,
+                  wireDrag,
+                  state.progressiveConnections
+                );
               return (
                 <FunctionNodeView
                   key={node.id}
                   node={node}
                   selected={selected}
+                  progressiveCardOpacity={progressiveCardOpacity}
+                  progressiveInputPinMultiplier={progressiveInputPinMult}
                   inputConnected={(port) => isInputConnected(node.id, port)}
                   outputConnected={isOutputConnected(node.id)}
                   onSelect={select}
@@ -909,11 +933,17 @@ export function GraphCanvas() {
               );
             }
 
+            const progressiveCardOpacity = progressiveWholeNodeOpacity(
+              node,
+              wireDrag,
+              state.progressiveConnections
+            );
             return (
               <OutputNodeView
                 key={node.id}
                 node={node}
                 selected={selected}
+                progressiveCardOpacity={progressiveCardOpacity}
                 inputConnected={isInputConnected(node.id, 'in-0')}
                 onSelect={select}
                 onToggleExpand={() =>
@@ -994,7 +1024,7 @@ export function GraphCanvas() {
           });
           setContextMenu(null);
         }}
-        onInsertParameterNew={() => {
+        onInsertParameterNew={(outputPinColor) => {
           if (!contextMenu) return;
           const { x, y } = contextMenu.pasteOriginGraph;
           dispatch({
@@ -1002,6 +1032,7 @@ export function GraphCanvas() {
             graphX: x,
             graphY: y,
             mode: 'new',
+            outputPinColor,
           });
           setContextMenu(null);
         }}

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import chevronCollapsedUrl from '../assets/icons/node-header-chevron-collapsed.svg?url';
 import chevronExpandedUrl from '../assets/icons/node-header-chevron-expanded.svg?url';
+import { GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE } from './graphInsertNodeMenu';
+import { GraphMenuColorFlyout } from './graphMenuShared';
 import { HEADER_H, ROW_H } from './geometry';
 import { useGraph } from './GraphContext';
+import type { PinColorId } from './pinColors';
 import type { ParameterNode } from './types';
 
 const PANEL_W = 200;
@@ -180,7 +183,20 @@ function ParameterPanelInlineEdit({ value, onCommit, variant, ariaLabel }: Inlin
   );
 }
 
-/** Figma `132:9384` — pinned top-right of graph viewport; header matches node chrome. */
+const panelCardStyle = {
+  boxSizing: 'border-box' as const,
+  borderRadius: 'var(--studio-radius-panel)',
+  borderWidth: 1,
+  borderStyle: 'solid' as const,
+  borderColor: 'var(--studio-stroke)',
+  background: 'var(--studio-surface-200)',
+  boxShadow:
+    '0px 2px 4px rgba(4, 4, 8, 0.25), 0px 10px 20px rgba(4, 4, 8, 0.25), 0px 16px 32px rgba(4, 4, 8, 0.25)',
+  fontFamily: 'var(--alpha-font-family)',
+  overflow: 'hidden' as const,
+};
+
+/** Figma `132:9384` — pinned top-left of graph viewport; new-parameter palette `145:32069`. */
 export function GraphParameterPanel() {
   const { state, dispatch } = useGraph();
   const expanded = state.parameterPanelExpanded;
@@ -189,171 +205,205 @@ export function GraphParameterPanel() {
     [state.nodes]
   );
 
-  const addFromPlus = () => {
-    const last = parameters[parameters.length - 1];
-    const gx = last ? last.x + 120 : 80;
-    const gy = last ? last.y + 56 : 200;
-    dispatch({
-      type: 'addParameter',
-      graphX: gx,
-      graphY: gy,
-      mode: 'new',
-    });
-  };
+  const panelWrapRef = useRef<HTMLDivElement>(null);
+  const newParamColorFlyoutRef = useRef<HTMLDivElement>(null);
+  const [newParamColorMenuOpen, setNewParamColorMenuOpen] = useState(false);
+
+  const closeColorMenu = useCallback(() => setNewParamColorMenuOpen(false), []);
+
+  useEffect(() => {
+    if (!newParamColorMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeColorMenu();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [newParamColorMenuOpen, closeColorMenu]);
+
+  useEffect(() => {
+    if (!newParamColorMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (panelWrapRef.current?.contains(t)) return;
+      if (newParamColorFlyoutRef.current?.contains(t)) return;
+      closeColorMenu();
+    };
+    document.addEventListener('mousedown', onDoc, true);
+    return () => document.removeEventListener('mousedown', onDoc, true);
+  }, [newParamColorMenuOpen, closeColorMenu]);
+
+  const dispatchNewParameter = useCallback(
+    (outputPinColor: PinColorId) => {
+      const last = parameters[parameters.length - 1];
+      const gx = last ? last.x + 120 : 80;
+      const gy = last ? last.y + 56 : 200;
+      dispatch({
+        type: 'addParameter',
+        graphX: gx,
+        graphY: gy,
+        mode: 'new',
+        outputPinColor,
+      });
+    },
+    [dispatch, parameters]
+  );
 
   return (
     <div
+      ref={panelWrapRef}
       style={{
         position: 'absolute',
         top: 12,
-        right: 12,
+        left: 12,
         zIndex: 25,
         width: PANEL_W,
-        boxSizing: 'border-box',
-        borderRadius: 'var(--studio-radius-panel)',
-        borderWidth: 1,
-        borderStyle: 'solid',
-        borderColor: 'var(--studio-stroke)',
-        background: 'var(--studio-surface-200)',
-        boxShadow:
-          '0px 2px 4px rgba(4, 4, 8, 0.25), 0px 10px 20px rgba(4, 4, 8, 0.25), 0px 16px 32px rgba(4, 4, 8, 0.25)',
-        fontFamily: 'var(--alpha-font-family)',
         pointerEvents: 'auto',
-        overflow: 'hidden',
       }}
     >
-      <div
-        style={{
-          minHeight: HEADER_H,
-          boxSizing: 'border-box',
-          paddingLeft: 4,
-          paddingRight: 8,
-          paddingTop: 0,
-          paddingBottom: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--foundation-gap-medium)',
-          background: 'var(--studio-header-neutral)',
-          borderRadius: expanded ? 'var(--studio-radius-panel) var(--studio-radius-panel) 0 0' : undefined,
-        }}
-      >
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => dispatch({ type: 'toggleParameterPanelExpanded' })}
-          style={{
-            width: 24,
-            height: 24,
-            padding: 0,
-            border: 'none',
-            margin: 0,
-            background: 'transparent',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <img
-            src={expanded ? chevronExpandedUrl : chevronCollapsedUrl}
-            width={12}
-            height={12}
-            alt=""
-            draggable={false}
-            style={{ display: 'block' }}
-          />
-        </button>
-        <span
-          className="truncate text-emphasis"
-          style={{
-            flex: '1 1 0',
-            minWidth: 0,
-            fontSize: 'var(--alpha-text-bodysmall-font-size)',
-            lineHeight: 1.4,
-            letterSpacing: 'var(--alpha-text-bodysmall-letter-spacing)',
-            fontWeight: 600,
-          }}
-        >
-          Parameters
-        </span>
-        <button
-          type="button"
-          onClick={addFromPlus}
-          title="Add parameter"
-          style={{
-            width: 24,
-            height: 24,
-            padding: 0,
-            border: 'none',
-            margin: 0,
-            background: 'transparent',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <ParameterPlusIcon />
-        </button>
-      </div>
-
-      {expanded ? (
+      <div style={panelCardStyle}>
         <div
           style={{
-            padding: `var(--foundation-padding-xsmall) 0`,
+            minHeight: HEADER_H,
+            boxSizing: 'border-box',
+            paddingLeft: 4,
+            paddingRight: 8,
+            paddingTop: 0,
+            paddingBottom: 0,
             display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--foundation-gap-xxsmall)',
-            maxHeight: 320,
-            overflowY: 'auto',
-            background: 'var(--studio-surface-200)',
-            borderRadius: '0 0 var(--studio-radius-panel) var(--studio-radius-panel)',
+            alignItems: 'center',
+            gap: 'var(--foundation-gap-medium)',
           }}
         >
-          {parameters.map((p) => (
-            <div
-              key={p.id}
-              style={{
-                minHeight: ROW_H,
-                width: '100%',
-                boxSizing: 'border-box',
-                padding: `0 var(--foundation-padding-small)`,
-                display: 'flex',
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 'var(--foundation-gap-xsmall)',
-              }}
-            >
-              <ParameterPanelInlineEdit
-                variant="label"
-                ariaLabel="Parameter name"
-                value={p.title}
-                onCommit={(title) =>
-                  dispatch({
-                    type: 'updateParameter',
-                    id: p.id,
-                    patch: { title },
-                  })
-                }
-              />
-              <ParameterPanelInlineEdit
-                variant="value"
-                ariaLabel="Parameter value"
-                value={p.parameterValue ?? ''}
-                onCommit={(parameterValue) =>
-                  dispatch({
-                    type: 'updateParameter',
-                    id: p.id,
-                    patch: { parameterValue },
-                  })
-                }
-              />
-            </div>
-          ))}
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => dispatch({ type: 'toggleParameterPanelExpanded' })}
+            style={{
+              width: 24,
+              height: 24,
+              padding: 0,
+              border: 'none',
+              margin: 0,
+              background: 'transparent',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src={expanded ? chevronExpandedUrl : chevronCollapsedUrl}
+              width={12}
+              height={12}
+              alt=""
+              draggable={false}
+              style={{ display: 'block' }}
+            />
+          </button>
+          <span
+            className="truncate text-emphasis"
+            style={{
+              flex: '1 1 0',
+              minWidth: 0,
+              fontSize: 'var(--alpha-text-bodysmall-font-size)',
+              lineHeight: 1.4,
+              letterSpacing: 'var(--alpha-text-bodysmall-letter-spacing)',
+              fontWeight: 600,
+            }}
+          >
+            Parameters
+          </span>
+          <button
+            type="button"
+            onClick={() => setNewParamColorMenuOpen((o) => !o)}
+            title="Add parameter"
+            aria-expanded={newParamColorMenuOpen}
+            aria-haspopup="menu"
+            style={{
+              width: 24,
+              height: 24,
+              padding: 0,
+              border: 'none',
+              margin: 0,
+              background: 'transparent',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <ParameterPlusIcon />
+          </button>
         </div>
-      ) : null}
+
+        {expanded ? (
+          <div
+            style={{
+              padding: `var(--foundation-padding-xsmall) 0`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--foundation-gap-xxsmall)',
+              maxHeight: 320,
+              overflowY: 'auto',
+            }}
+          >
+            {parameters.map((p) => (
+              <div
+                key={p.id}
+                style={{
+                  minHeight: ROW_H,
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: `0 var(--foundation-padding-small)`,
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 'var(--foundation-gap-xsmall)',
+                }}
+              >
+                <ParameterPanelInlineEdit
+                  variant="label"
+                  ariaLabel="Parameter name"
+                  value={p.title}
+                  onCommit={(title) =>
+                    dispatch({
+                      type: 'updateParameter',
+                      id: p.id,
+                      patch: { title },
+                    })
+                  }
+                />
+                <ParameterPanelInlineEdit
+                  variant="value"
+                  ariaLabel="Parameter value"
+                  value={p.parameterValue ?? ''}
+                  onCommit={(parameterValue) =>
+                    dispatch({
+                      type: 'updateParameter',
+                      id: p.id,
+                      patch: { parameterValue },
+                    })
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <GraphMenuColorFlyout
+        open={newParamColorMenuOpen}
+        sectionTitle={GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE}
+        mainMenuRef={panelWrapRef}
+        flyoutRef={newParamColorFlyoutRef}
+        menuPosition={null}
+        onPickColor={(c) => {
+          dispatchNewParameter(c);
+          closeColorMenu();
+        }}
+      />
     </div>
   );
 }

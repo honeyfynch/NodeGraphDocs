@@ -4,6 +4,7 @@ import type { PinColorId } from './pinColors';
 import {
   GRAPH_INSERT_NODE_SUBMENU_ROWS,
   GRAPH_INSERT_NODE_SUBMENU_W,
+  GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE,
 } from './graphInsertNodeMenu';
 
 /** Figma graph / node context menus — width 260. */
@@ -292,7 +293,7 @@ export function GraphMenuInsertParameterFlyout({
         />
       ))}
       <GraphMenuDivider />
-      <GraphMenuRow label="New parameter" onClick={onNewParameter} />
+      <GraphMenuRow label={GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE} onClick={onNewParameter} />
     </div>
   );
 }

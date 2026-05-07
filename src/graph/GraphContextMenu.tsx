@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PinColorId } from './pinColors';
+import { GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE } from './graphInsertNodeMenu';
 import {
   GRAPH_MENU_PANEL_W,
   GraphMenuColorFlyout,
@@ -22,7 +23,7 @@ export type GraphContextMenuProps = {
   parameterRows: readonly { id: string; title: string }[];
   onInsertFunctionNode: (outputPinColor: PinColorId) => void;
   onInsertParameterFromTemplate: (parameterId: string) => void;
-  onInsertParameterNew: () => void;
+  onInsertParameterNew: (outputPinColor: PinColorId) => void;
   onCut: () => void;
   onCopy: () => void;
   onPaste: () => void;
@@ -58,15 +59,22 @@ export function GraphContextMenu({
   const ref = useRef<HTMLDivElement>(null);
   const insertNodeFlyoutRef = useRef<HTMLDivElement>(null);
   const insertParamFlyoutRef = useRef<HTMLDivElement>(null);
+  const insertNewParamColorFlyoutRef = useRef<HTMLDivElement>(null);
   const [insertNodeSubmenuOpen, setInsertNodeSubmenuOpen] = useState(false);
   const [insertParamSubmenuOpen, setInsertParamSubmenuOpen] = useState(false);
+  const [insertNewParamColorSubmenuOpen, setInsertNewParamColorSubmenuOpen] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setInsertNodeSubmenuOpen(false);
       setInsertParamSubmenuOpen(false);
+      setInsertNewParamColorSubmenuOpen(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!insertParamSubmenuOpen) setInsertNewParamColorSubmenuOpen(false);
+  }, [insertParamSubmenuOpen]);
 
   useLayoutEffect(() => {
     if (!open || !position || !ref.current) return;
@@ -89,6 +97,10 @@ export function GraphContextMenu({
         setInsertNodeSubmenuOpen(false);
         return;
       }
+      if (insertNewParamColorSubmenuOpen) {
+        setInsertNewParamColorSubmenuOpen(false);
+        return;
+      }
       if (insertParamSubmenuOpen) {
         setInsertParamSubmenuOpen(false);
         return;
@@ -97,7 +109,7 @@ export function GraphContextMenu({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, insertNodeSubmenuOpen, insertParamSubmenuOpen]);
+  }, [open, onClose, insertNodeSubmenuOpen, insertParamSubmenuOpen, insertNewParamColorSubmenuOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -106,6 +118,7 @@ export function GraphContextMenu({
       if (ref.current?.contains(t)) return;
       if (insertNodeFlyoutRef.current?.contains(t)) return;
       if (insertParamFlyoutRef.current?.contains(t)) return;
+      if (insertNewParamColorFlyoutRef.current?.contains(t)) return;
       onClose();
     };
     document.addEventListener('mousedown', onDoc, true);
@@ -233,8 +246,18 @@ export function GraphContextMenu({
           onInsertParameterFromTemplate(parameterId);
           setInsertParamSubmenuOpen(false);
         }}
-        onNewParameter={() => {
-          onInsertParameterNew();
+        onNewParameter={() => setInsertNewParamColorSubmenuOpen(true)}
+      />
+
+      <GraphMenuColorFlyout
+        open={insertNewParamColorSubmenuOpen}
+        sectionTitle={GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE}
+        mainMenuRef={insertParamFlyoutRef}
+        flyoutRef={insertNewParamColorFlyoutRef}
+        menuPosition={position}
+        onPickColor={(c) => {
+          onInsertParameterNew(c);
+          setInsertNewParamColorSubmenuOpen(false);
           setInsertParamSubmenuOpen(false);
         }}
       />

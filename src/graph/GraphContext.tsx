@@ -120,6 +120,11 @@ export type GraphState = {
   graphPlayActive: boolean;
   /** Bottom-left navigation/shortcuts panel (Figma `133:7964`). Toggled from Inspector → Experimental Settings. Default off. */
   showGraphGuide: boolean;
+  /**
+   * When true (default), while a wire is active from an output pin, nodes with no compatible input
+   * pin color dim to 50% opacity; on nodes that have a match, non-matching input pins dim to 50%.
+   */
+  progressiveConnections: boolean;
   /** In-memory clipboard for copy/cut/paste (induced subgraph of selected nodes). */
   clipboard: GraphClipboard | null;
   /** Inspector → Graph Settings: when false, parameter nodes are removed and the parameter panel is hidden. */
@@ -226,6 +231,7 @@ const initialState: GraphState = {
   playMode: true,
   graphPlayActive: false,
   showGraphGuide: false,
+  progressiveConnections: true,
   clipboard: null,
   parametersEnabled: true,
   parameterPanelExpanded: true,
@@ -298,6 +304,7 @@ type Action =
   | { type: 'setPrototypeNodeKind'; id: string; kind: 'parameter' | 'function' }
   | { type: 'setClickDragPinWiring'; value: boolean }
   | { type: 'setShowGraphGuide'; value: boolean }
+  | { type: 'setProgressiveConnections'; value: boolean }
   | { type: 'setPlayMode'; value: boolean }
   | { type: 'toggleGraphPlay' }
   /** Horizontal resize from canvas edge handles (`width` clamped; optional `x` when resizing from the left). */
@@ -319,6 +326,8 @@ type Action =
       graphY: number;
       mode: 'new' | 'clone';
       cloneFromId?: string;
+      /** When `mode === 'new'`, sets parameter + node pin/header color. Ignored for `clone` (uses source). */
+      outputPinColor?: PinColorId;
     };
 
 function reducer(state: GraphState, action: Action): GraphState {
@@ -416,6 +425,8 @@ function reducer(state: GraphState, action: Action): GraphState {
       return { ...state, parameterPanelExpanded: !state.parameterPanelExpanded };
     case 'setShowGraphGuide':
       return { ...state, showGraphGuide: action.value };
+    case 'setProgressiveConnections':
+      return { ...state, progressiveConnections: action.value };
     case 'setPlayMode':
       return {
         ...state,
@@ -515,18 +526,22 @@ function reducer(state: GraphState, action: Action): GraphState {
       const firstParam = state.nodes.find((n) => n.kind === 'parameter') as
         | ParameterNode
         | undefined;
-      const color: PinColorId = firstParam?.outputPinColor ?? 'berry';
       let title = 'Parameter';
       let parameterValue: string | undefined = 'Value';
+      let cloneSrc: ParameterNode | undefined;
       if (action.mode === 'clone' && action.cloneFromId) {
-        const src = state.nodes.find(
+        cloneSrc = state.nodes.find(
           (n) => n.id === action.cloneFromId && n.kind === 'parameter'
         ) as ParameterNode | undefined;
-        if (src) {
-          title = src.title;
-          parameterValue = src.parameterValue ?? 'Value';
+        if (cloneSrc) {
+          title = cloneSrc.title;
+          parameterValue = cloneSrc.parameterValue ?? 'Value';
         }
       }
+      const color: PinColorId =
+        cloneSrc != null
+          ? cloneSrc.outputPinColor
+          : (action.outputPinColor ?? firstParam?.outputPinColor ?? 'berry');
       const node: ParameterNode = {
         kind: 'parameter',
         id: newId,

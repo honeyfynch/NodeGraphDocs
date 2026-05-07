@@ -24,6 +24,10 @@ import chevronExpandedUrl from '../../assets/icons/node-header-chevron-expanded.
 type Props = {
   node: FunctionNode;
   selected: boolean;
+  /** Experimental progressive connections: whole-card dim (default 1). */
+  progressiveCardOpacity?: number;
+  /** Per-input-pin multiplier when the card stays full opacity (default 1). */
+  progressiveInputPinMultiplier?: (port: `in-${number}`) => number;
   inputConnected: (port: `in-${number}`) => boolean;
   outputConnected: boolean;
   onSelect: (e: React.PointerEvent) => void;
@@ -67,6 +71,8 @@ function dimInputPinWrapper(disabled: boolean, connected: boolean) {
 export function FunctionNodeView({
   node,
   selected,
+  progressiveCardOpacity = 1,
+  progressiveInputPinMultiplier,
   inputConnected,
   outputConnected,
   onSelect,
@@ -88,6 +94,9 @@ export function FunctionNodeView({
   const portLayouts = layoutFunctionInputPorts(node);
   const w = graphNodeWidth(node);
   const h = nodeHeight(node);
+
+  const progressivePinFactor = (port: `in-${number}`) =>
+    progressiveCardOpacity < 1 ? 1 : (progressiveInputPinMultiplier?.(port) ?? 1);
 
   const headerPin = (
     <div
@@ -126,7 +135,8 @@ export function FunctionNodeView({
             left: 0,
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            opacity: dimInputPinWrapper(Boolean(node.disabled), conn),
+            opacity:
+              dimInputPinWrapper(Boolean(node.disabled), conn) * progressivePinFactor(port),
           }}
           onPointerDown={(e) => {
             e.stopPropagation();
@@ -179,6 +189,9 @@ export function FunctionNodeView({
     const groupPin = slot.inputPinColor;
     const groupPorts = portsForInputGroupSlot(node, slotIndex);
     const stubConnected = groupPorts.some((p) => inputConnected(p));
+    const stubPort = groupPorts[0];
+    const stubProg =
+      stubPort != null ? progressivePinFactor(stubPort) : 1;
 
     return (
       <div
@@ -209,7 +222,8 @@ export function FunctionNodeView({
                 left: 0,
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
-                opacity: dimInputPinWrapper(Boolean(node.disabled), stubConnected),
+                opacity:
+                  dimInputPinWrapper(Boolean(node.disabled), stubConnected) * stubProg,
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -292,7 +306,9 @@ export function FunctionNodeView({
                       left: 0,
                       top: '50%',
                       transform: 'translate(-50%, -50%)',
-                      opacity: dimInputPinWrapper(Boolean(node.disabled), childConn),
+                      opacity:
+                        dimInputPinWrapper(Boolean(node.disabled), childConn) *
+                        progressivePinFactor(port),
                     }}
                     onPointerDown={(e) => {
                       e.stopPropagation();
@@ -353,6 +369,7 @@ export function FunctionNodeView({
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
+        opacity: progressiveCardOpacity,
       }}
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);

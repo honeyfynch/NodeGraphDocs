@@ -10,6 +10,8 @@ import { Pin } from '../Pin';
 type Props = {
   node: OutputNode;
   selected: boolean;
+  /** Experimental progressive connections (default 1). */
+  progressiveCardOpacity?: number;
   inputConnected: boolean;
   onSelect: (e: React.PointerEvent) => void;
   onToggleExpand: () => void;
@@ -23,6 +25,7 @@ type Props = {
 export function OutputNodeView({
   node,
   selected,
+  progressiveCardOpacity = 1,
   inputConnected,
   onSelect,
   onToggleExpand,
@@ -45,6 +48,7 @@ export function OutputNodeView({
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
+        opacity: progressiveCardOpacity,
       }}
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);

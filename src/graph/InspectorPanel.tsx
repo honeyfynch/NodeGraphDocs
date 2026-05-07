@@ -598,6 +598,15 @@ export function InspectorPanel() {
         </NodePropertyFieldShell>
         <NodePropertyFieldShell>
           <Checkbox
+            label="Progressive connections"
+            checked={state.progressiveConnections}
+            onCheckedChange={(value) =>
+              dispatch({ type: 'setProgressiveConnections', value })
+            }
+          />
+        </NodePropertyFieldShell>
+        <NodePropertyFieldShell>
+          <Checkbox
             label="Click-drag to connect pins"
             checked={state.clickDragPinWiring}
             onCheckedChange={(value) =>
