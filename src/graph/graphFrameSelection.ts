@@ -4,8 +4,9 @@ import type { GraphNode } from './types';
 export type GraphView = { tx: number; ty: number; scale: number };
 
 /**
- * Fit `selectedIds` into the graph viewport (screen-space tx/ty/scale, same contract as GraphCanvas).
- * Returns null if nothing to frame.
+ * Fit the bounding box of the given nodes into the graph viewport (screen-space tx/ty/scale).
+ * `selectedIds` lists which nodes to include; callers may pass every node id to frame the whole graph.
+ * Returns null if nothing to frame (empty ids, missing nodes, or degenerate bounds).
  */
 export function viewToFrameNodes(
   nodes: GraphNode[],

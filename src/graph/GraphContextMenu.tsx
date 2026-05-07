@@ -207,7 +207,6 @@ export function GraphContextMenu({
         <GraphMenuRow
           label="Frame selection"
           trailing={<span style={graphMenuHotkeyStyle}>F</span>}
-          disabled={selOff}
           onClick={onFrameSelection}
         />
         <GraphMenuRow

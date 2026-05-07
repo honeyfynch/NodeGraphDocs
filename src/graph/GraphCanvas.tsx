@@ -217,9 +217,13 @@ export function GraphCanvas() {
     const el = containerRef.current;
     if (!el) return;
     const box = el.getBoundingClientRect();
+    const ids =
+      state.selectedIds.length > 0
+        ? state.selectedIds
+        : state.nodes.map((n) => n.id);
     const next = viewToFrameNodes(
       state.nodes,
-      state.selectedIds,
+      ids,
       box.width,
       box.height,
       48,

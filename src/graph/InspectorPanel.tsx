@@ -47,10 +47,7 @@ export function InspectorPanel() {
       style={{ width: 320, maxHeight: '100vh' }}
     >
       <div className="p-md flex-col gap-md border-studio border-b">
-        <div>
-          <h2 className="text-label-small text-emphasis m-0">Prototype Settings</h2>
-          <p className="text-xs text-muted m-0 inspector-sub">Configure the selected node</p>
-        </div>
+        <h2 className="text-label-small text-emphasis m-0">Prototype Settings</h2>
       </div>
 
       <div className="p-md flex-col gap-sm border-studio border-b">
