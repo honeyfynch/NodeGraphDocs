@@ -1,11 +1,7 @@
 import { useLayoutEffect, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import chevronCollapsedUrl from '../assets/icons/node-header-chevron-collapsed.svg?url';
-import type { PinColorId } from './pinColors';
-import {
-  GRAPH_INSERT_NODE_SUBMENU_ROWS,
-  GRAPH_INSERT_NODE_SUBMENU_W,
-  GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE,
-} from './graphInsertNodeMenu';
+import type { GraphWireColorId } from './pinColors';
+import { GRAPH_INSERT_NODE_SUBMENU_W, GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE } from './graphInsertNodeMenu';
 
 /** Figma graph / node context menus — width 260. */
 export const GRAPH_MENU_PANEL_W = 260;
@@ -172,6 +168,7 @@ export function GraphMenuColorFlyout({
   mainMenuRef,
   flyoutRef,
   menuPosition,
+  colorRows,
   onPickColor,
 }: {
   open: boolean;
@@ -180,7 +177,8 @@ export function GraphMenuColorFlyout({
   flyoutRef: RefObject<HTMLDivElement | null>;
   /** When the main menu is repositioned, pass updated coords so this flyout reclamps. */
   menuPosition: { clientX: number; clientY: number } | null;
-  onPickColor: (color: PinColorId) => void;
+  colorRows: readonly { label: string; colorId: GraphWireColorId }[];
+  onPickColor: (color: GraphWireColorId) => void;
 }) {
   useLayoutEffect(() => {
     if (!open || !mainMenuRef.current || !flyoutRef.current) return;
@@ -201,7 +199,7 @@ export function GraphMenuColorFlyout({
     if (left < pad) left = pad;
     subEl.style.left = `${left}px`;
     subEl.style.top = `${top}px`;
-  }, [open, sectionTitle, menuPosition?.clientX, menuPosition?.clientY, mainMenuRef, flyoutRef]);
+  }, [open, sectionTitle, menuPosition?.clientX, menuPosition?.clientY, mainMenuRef, flyoutRef, colorRows]);
 
   if (!open) return null;
 
@@ -219,7 +217,7 @@ export function GraphMenuColorFlyout({
       }}
     >
       <GraphMenuSubmenuSectionTitle title={sectionTitle} />
-      {GRAPH_INSERT_NODE_SUBMENU_ROWS.map((row) => (
+      {colorRows.map((row) => (
         <GraphMenuRow
           key={row.colorId}
           label={row.label}

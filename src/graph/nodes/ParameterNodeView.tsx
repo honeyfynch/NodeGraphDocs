@@ -3,6 +3,7 @@ import type { ParameterNode } from '../types';
 import {
   graphNodeWidth,
   nodeHeight,
+  NODE_ROW_PIN_CENTER_Y_OFFSET,
   PARAMETER_CHIP_H,
   PARAMETER_RADIUS_INNER,
   PARAMETER_RADIUS_OUTER,
@@ -11,7 +12,8 @@ import {
 } from '../geometry';
 import { parameterDisplayValue } from '../graphWiring';
 import { translucentFill50 } from '../disabledVisual';
-import { NODE_HEADER_HEX } from '../pinColors';
+import { useGraph } from '../GraphContext';
+import { resolveGraphHeaderHex } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodeResizeEdges } from '../NodeResizeEdges';
 import { Pin } from '../Pin';
@@ -56,7 +58,8 @@ export function ParameterNodeView({
   onResizeEdgePointerDown,
   onNodeContextMenu,
 }: Props) {
-  const bg = NODE_HEADER_HEX[node.outputPinColor];
+  const { state } = useGraph();
+  const bg = resolveGraphHeaderHex(node.outputPinColor, state.extendedPalette);
   const headerFill = node.disabled ? translucentFill50(bg) : bg;
   const expanded = node.expanded;
   const w = graphNodeWidth(node);
@@ -174,7 +177,7 @@ export function ParameterNodeView({
               style={{
                 position: 'absolute',
                 right: -PIN_OFFSET,
-                top: '50%',
+                top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translateY(-50%)',
                 zIndex: 2,
                 opacity: node.disabled ? 0.5 : 1,

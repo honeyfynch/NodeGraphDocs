@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { PinColorId } from './pinColors';
+import type { GraphWireColorId } from './pinColors';
 import { GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE } from './graphInsertNodeMenu';
 import {
   GRAPH_MENU_PANEL_W,
@@ -21,9 +21,10 @@ export type GraphContextMenuProps = {
   hasClipboard: boolean;
   parametersEnabled: boolean;
   parameterRows: readonly { id: string; title: string }[];
-  onInsertFunctionNode: (outputPinColor: PinColorId) => void;
+  colorRows: readonly { label: string; colorId: GraphWireColorId }[];
+  onInsertFunctionNode: (outputPinColor: GraphWireColorId) => void;
   onInsertParameterFromTemplate: (parameterId: string) => void;
-  onInsertParameterNew: (outputPinColor: PinColorId) => void;
+  onInsertParameterNew: (outputPinColor: GraphWireColorId) => void;
   onCut: () => void;
   onCopy: () => void;
   onPaste: () => void;
@@ -33,6 +34,8 @@ export type GraphContextMenuProps = {
   onFrameSelection: () => void;
   onGroup: () => void;
   onUngroup: () => void;
+  /** When true, Ungroup is inactive (no group node in the current selection). */
+  ungroupDisabled?: boolean;
 };
 
 export function GraphContextMenu({
@@ -43,6 +46,7 @@ export function GraphContextMenu({
   hasClipboard,
   parametersEnabled,
   parameterRows,
+  colorRows,
   onInsertFunctionNode,
   onInsertParameterFromTemplate,
   onInsertParameterNew,
@@ -55,6 +59,7 @@ export function GraphContextMenu({
   onFrameSelection,
   onGroup,
   onUngroup,
+  ungroupDisabled = false,
 }: GraphContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const insertNodeFlyoutRef = useRef<HTMLDivElement>(null);
@@ -129,6 +134,7 @@ export function GraphContextMenu({
 
   const selOff = !hasSelection;
   const pasteOff = !hasClipboard;
+  const ungroupOff = selOff || ungroupDisabled;
 
   return (
     <>
@@ -218,7 +224,7 @@ export function GraphContextMenu({
         <GraphMenuRow
           label="Ungroup selection"
           trailing={<span style={graphMenuHotkeyStyle}>⌘U</span>}
-          disabled={selOff}
+          disabled={ungroupOff}
           onClick={onUngroup}
         />
       </div>
@@ -229,6 +235,7 @@ export function GraphContextMenu({
         mainMenuRef={ref}
         flyoutRef={insertNodeFlyoutRef}
         menuPosition={position}
+        colorRows={colorRows}
         onPickColor={(c) => {
           onInsertFunctionNode(c);
           setInsertNodeSubmenuOpen(false);
@@ -254,6 +261,7 @@ export function GraphContextMenu({
         mainMenuRef={insertParamFlyoutRef}
         flyoutRef={insertNewParamColorFlyoutRef}
         menuPosition={position}
+        colorRows={colorRows}
         onPickColor={(c) => {
           onInsertParameterNew(c);
           setInsertNewParamColorSubmenuOpen(false);

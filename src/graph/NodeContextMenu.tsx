@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { PinColorId } from './pinColors';
+import type { GraphWireColorId } from './pinColors';
 import {
   GRAPH_MENU_PANEL_W,
   GraphMenuColorFlyout,
@@ -20,7 +20,14 @@ export type NodeContextMenuProps = {
   } | null;
   onClose: () => void;
   hasClipboard: boolean;
-  onSwapNode: (outputPinColor: PinColorId) => void;
+  /** Selection is empty — disables Group selection. */
+  hasSelection: boolean;
+  /** No group in the selection — disables Ungroup. */
+  ungroupDisabled: boolean;
+  /** Target node cannot be swapped (e.g. group wrapper). */
+  swapNodeDisabled: boolean;
+  colorRows: readonly { label: string; colorId: GraphWireColorId }[];
+  onSwapNode: (outputPinColor: GraphWireColorId) => void;
   onCut: () => void;
   onCopy: () => void;
   onPaste: () => void;
@@ -37,6 +44,10 @@ export function NodeContextMenu({
   position,
   onClose,
   hasClipboard,
+  hasSelection,
+  ungroupDisabled,
+  swapNodeDisabled,
+  colorRows,
   onSwapNode,
   onCut,
   onCopy,
@@ -98,6 +109,8 @@ export function NodeContextMenu({
   if (!open || !position) return null;
 
   const pasteOff = !hasClipboard;
+  const groupOff = !hasSelection;
+  const ungroupOff = !hasSelection || ungroupDisabled;
 
   return (
     <>
@@ -121,7 +134,11 @@ export function NodeContextMenu({
         <GraphMenuRow
           label="Swap node"
           trailing={<GraphMenuSubmenuChevron />}
-          onClick={() => setSwapSubmenuOpen((o) => !o)}
+          disabled={swapNodeDisabled}
+          onClick={() => {
+            if (swapNodeDisabled) return;
+            setSwapSubmenuOpen((o) => !o);
+          }}
         />
         <GraphMenuDivider />
         <GraphMenuRow
@@ -168,11 +185,13 @@ export function NodeContextMenu({
         <GraphMenuRow
           label="Group selection"
           trailing={<span style={graphMenuHotkeyStyle}>⌘G</span>}
+          disabled={groupOff}
           onClick={onGroup}
         />
         <GraphMenuRow
           label="Ungroup selection"
           trailing={<span style={graphMenuHotkeyStyle}>⌘U</span>}
+          disabled={ungroupOff}
           onClick={onUngroup}
         />
       </div>
@@ -183,6 +202,7 @@ export function NodeContextMenu({
         mainMenuRef={ref}
         flyoutRef={swapSubmenuRef}
         menuPosition={position}
+        colorRows={colorRows}
         onPickColor={(c) => {
           onSwapNode(c);
           setSwapSubmenuOpen(false);

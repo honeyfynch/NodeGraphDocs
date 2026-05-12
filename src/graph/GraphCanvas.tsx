@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { viewToFrameNodes } from './graphFrameSelection';
+import { graphInsertNodeSubmenuRows } from './graphInsertNodeMenu';
 import { GraphContextMenu } from './GraphContextMenu';
 import { GraphParameterPanel } from './GraphParameterPanel';
 import { NodeContextMenu } from './NodeContextMenu';
 import { GraphNavigationGuide } from './GraphNavigationGuide';
 import { useGraph } from './GraphContext';
-import type { GraphEdge, GraphNode } from './types';
+import { isInputConnectedWithGroupBridges } from './graphGroupOps';
+import { edgeVisibleForGraphScope, nodeVisibleForGraphScope } from './graphGroupScope';
+import type { GraphEdge, GraphNode, GraphOutPort } from './types';
 import {
   bezierPath,
+  generateWiredInIndices,
   GRAPH_NODE_MAX_W,
   graphNodeMinWidth,
   graphNodeWidth,
   inputPinColorForTarget,
   layoutFunctionInputPorts,
+  GRAPH_WIRE_STROKE_PX,
   NODE_INPUT_PIN_OUTER_R,
   pinGraphPosition,
   portsForInputGroupSlot,
@@ -21,10 +26,14 @@ import {
   progressiveInputPinMultiplier,
   progressiveWholeNodeOpacity,
 } from './graphProgressiveConnections';
-import { PIN_HEX, type PinColorId } from './pinColors';
+import { resolveGraphPinHex, type GraphWireColorId } from './pinColors';
+import { findIncomingEdgeToPort } from './graphWiring';
 import { ParameterNodeView } from './nodes/ParameterNodeView';
 import { FunctionNodeView } from './nodes/FunctionNodeView';
 import { OutputNodeView } from './nodes/OutputNodeView';
+import { GenerateNodeView } from './nodes/GenerateNodeView';
+import { GroupInputNodeView } from './nodes/GroupInputNodeView';
+import { GroupOutputNodeView } from './nodes/GroupOutputNodeView';
 import { GraphPlayModeControl } from './GraphPlayModeControl';
 
 const WORLD_W = 2400;
@@ -41,7 +50,8 @@ type View = { tx: number; ty: number; scale: number };
 type PendingInputWire = {
   edgeId: string;
   fromNodeId: string;
-  colorId: PinColorId;
+  fromPort: GraphOutPort;
+  colorId: GraphWireColorId;
   pinX: number;
   pinY: number;
   startClientX: number;
@@ -52,7 +62,8 @@ type WireDrag =
   | null
   | {
       fromNodeId: string;
-      colorId: PinColorId;
+      fromPort: GraphOutPort;
+      colorId: GraphWireColorId;
       startX: number;
       startY: number;
       curX: number;
@@ -92,50 +103,82 @@ type PanDrag =
     };
 
 /** Bézier `d` for the wire; path runs output → input so flow animation matches data direction. */
-function edgePath(edge: GraphEdge, nodes: GraphNode[]): string | null {
+function edgePath(edge: GraphEdge, nodes: GraphNode[], edges: GraphEdge[]): string | null {
   const fromNode = nodes.find((n) => n.id === edge.from.nodeId);
   const toNode = nodes.find((n) => n.id === edge.to.nodeId);
   if (!fromNode || !toNode) return null;
-  const a = pinGraphPosition(fromNode, 'out');
-  const b = pinGraphPosition(toNode, edge.to.port);
+  const a = pinGraphPosition(fromNode, edge.from.port, edges);
+  const b = pinGraphPosition(toNode, edge.to.port, edges);
   return bezierPath(a.x, a.y, b.x, b.y);
 }
 
 function canPreviewEdge(
   nodes: GraphNode[],
+  edges: readonly GraphEdge[],
   fromNodeId: string,
   toNodeId: string,
-  toPort: `in-${number}`
-): PinColorId | null {
+  toPort: `in-${number}`,
+  fromPort: GraphOutPort = 'out'
+): GraphWireColorId | null {
   const fromNode = nodes.find((n) => n.id === fromNodeId);
   const toNode = nodes.find((n) => n.id === toNodeId);
   if (!fromNode || !toNode) return null;
-  let outColor: PinColorId;
+  let outColor: GraphWireColorId;
   if (fromNode.kind === 'parameter') outColor = fromNode.outputPinColor;
-  else if (fromNode.kind === 'function') outColor = fromNode.outputPinColor;
-  else return null;
-  let inColor: PinColorId;
-  if (toNode.kind === 'function') {
+  else if (fromNode.kind === 'function' || fromNode.kind === 'group') outColor = fromNode.outputPinColor;
+  else if (fromNode.kind === 'generate') outColor = 'gray';
+  else if (fromNode.kind === 'groupInput') {
+    const idx = fromPort === 'out' ? 0 : Number(fromPort.slice(4));
+    const row = fromNode.outputs[idx];
+    if (!row) return null;
+    outColor = row.colorId;
+  } else return null;
+  if (toNode.kind === 'function' || toNode.kind === 'group') {
     const layouts = layoutFunctionInputPorts(toNode);
     const hit = layouts.find((L) => L.port === toPort);
     if (!hit) return null;
-    inColor = inputPinColorForTarget(toNode, hit.target) ?? 'gray';
-  } else if (toNode.kind === 'output') {
+    const inColor = inputPinColorForTarget(toNode, hit.target) ?? 'gray';
+    if (outColor !== inColor) return null;
+    return outColor;
+  }
+  if (toNode.kind === 'output') {
     if (toPort !== 'in-0') return null;
-    inColor = toNode.inputPinColor;
-  } else return null;
-  if (outColor !== inColor) return null;
-  return outColor;
+    if (outColor !== toNode.inputPinColor) return null;
+    return outColor;
+  }
+  if (toNode.kind === 'groupOutput') {
+    if (toPort !== 'in-0') return null;
+    if (outColor !== toNode.inputPinColor) return null;
+    return outColor;
+  }
+  if (toNode.kind === 'generate') {
+    if (!toNode.expanded || !toNode.inputGroupExpanded) return null;
+    const wired = generateWiredInIndices(toNode.id, edges);
+    const nextFree = wired.length === 0 ? 0 : Math.max(...wired) + 1;
+    const allowed = new Set([...wired, nextFree]);
+    const n = Number(toPort.slice(3));
+    if (!allowed.has(n)) return null;
+    return outColor;
+  }
+  return null;
 }
 
 function inputsEditableForWiring(node: GraphNode | undefined): boolean {
   if (!node) return false;
   if (node.kind === 'parameter') return false;
+  if (node.kind === 'generate') {
+    return node.expanded && node.inputGroupExpanded;
+  }
+  if (node.kind === 'groupOutput') return true;
   return node.expanded;
 }
 
 export function GraphCanvas() {
   const { state, dispatch, connectEdge } = useGraph();
+  const insertNodeColorRows = useMemo(
+    () => graphInsertNodeSubmenuRows(state.extendedPalette),
+    [state.extendedPalette]
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ tx: 40, ty: 40, scale: 1 });
   const [wireDrag, setWireDrag] = useState<WireDrag>(null);
@@ -228,10 +271,11 @@ export function GraphCanvas() {
       box.height,
       48,
       0.35,
-      2.5
+      2.5,
+      state.edges
     );
     if (next) setView(next);
-  }, [state.nodes, state.selectedIds]);
+  }, [state.nodes, state.selectedIds, state.edges]);
 
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -264,11 +308,12 @@ export function GraphCanvas() {
   const beginWireDragAt = useCallback(
     (
       fromNodeId: string,
-      colorId: PinColorId,
+      colorId: GraphWireColorId,
       pinX: number,
       pinY: number,
       clientX: number,
-      clientY: number
+      clientY: number,
+      fromPort: GraphOutPort = 'out'
     ) => {
       const el = containerRef.current;
       if (!el) return;
@@ -278,6 +323,7 @@ export function GraphCanvas() {
       const curY = (clientY - r.top - v.ty) / v.scale;
       const wd = {
         fromNodeId,
+        fromPort,
         colorId,
         startX: pinX,
         startY: pinY,
@@ -308,7 +354,8 @@ export function GraphCanvas() {
             pi.pinX,
             pi.pinY,
             e.clientX,
-            e.clientY
+            e.clientY,
+            pi.fromPort
           );
         }
         return;
@@ -488,6 +535,15 @@ export function GraphCanvas() {
         const node = state.nodes.find((x) => x.id === id);
         if (node) origins[id] = { x: node.x, y: node.y };
       }
+      for (const id of moveIds) {
+        const node = state.nodes.find((x) => x.id === id);
+        if (node?.kind !== 'group') continue;
+        for (const cid of node.containedNodeIds) {
+          if (origins[cid] != null) continue;
+          const inner = state.nodes.find((x) => x.id === cid);
+          if (inner) origins[cid] = { x: inner.x, y: inner.y };
+        }
+      }
 
       const { x, y } = clientToGraph(client.clientX, client.clientY);
       setNodeDrag({
@@ -536,23 +592,40 @@ export function GraphCanvas() {
 
   const edgeTaken = useCallback(
     (toNodeId: string, port: `in-${number}`) =>
-      state.edges.some((ed) => ed.to.nodeId === toNodeId && ed.to.port === port),
-    [state.edges]
+      isInputConnectedWithGroupBridges(state.nodes, state.edges, toNodeId, port),
+    [state.edges, state.nodes]
   );
 
   const handleOutputDown = useCallback(
-    (nodeId: string, e: React.PointerEvent) => {
+    (nodeId: string, e: React.PointerEvent, fromPort: GraphOutPort = 'out') => {
       const n = state.nodes.find((x) => x.id === nodeId);
-      if (!n || (n.kind !== 'parameter' && n.kind !== 'function')) return;
+      if (
+        !n ||
+        (n.kind !== 'parameter' &&
+          n.kind !== 'function' &&
+          n.kind !== 'generate' &&
+          n.kind !== 'group' &&
+          n.kind !== 'groupInput')
+      ) {
+        return;
+      }
       dispatch({ type: 'select', id: nodeId, additive: false });
-      const colorId = n.outputPinColor;
-      const p = pinGraphPosition(n, 'out');
+      let colorId: GraphWireColorId;
+      if (n.kind === 'generate') colorId = 'gray';
+      else if (n.kind === 'groupInput') {
+        const idx = fromPort === 'out' ? 0 : Number(fromPort.slice(4));
+        colorId = n.outputs[idx]?.colorId ?? 'gray';
+      } else {
+        colorId = n.outputPinColor;
+      }
+      const p = pinGraphPosition(n, fromPort, state.edges);
       e.preventDefault();
       e.stopPropagation();
       pendingInputWireRef.current = null;
       /** Never remove edges from the sender; disconnect only by dragging from the receiving input. */
       const wd = {
         fromNodeId: nodeId,
+        fromPort,
         colorId,
         startX: p.x,
         startY: p.y,
@@ -565,26 +638,34 @@ export function GraphCanvas() {
       wireDragRef.current = wd;
       setWireDrag(wd);
     },
-    [state.nodes, dispatch]
+    [state.nodes, state.edges, dispatch]
   );
 
   const handleInputPointerDown = useCallback(
     (toNodeId: string, port: `in-${number}`, e: React.PointerEvent) => {
       const toNode = state.nodes.find((x) => x.id === toNodeId);
       if (!inputsEditableForWiring(toNode)) return;
-      const incoming = state.edges.find(
-        (ed) => ed.to.nodeId === toNodeId && ed.to.port === port
-      );
+      const incoming = findIncomingEdgeToPort(state.nodes, state.edges, toNodeId, port);
       if (!incoming) return;
       dispatch({ type: 'select', id: toNodeId, additive: false });
       const fromNode = state.nodes.find((x) => x.id === incoming.from.nodeId);
-      if (!fromNode || (fromNode.kind !== 'parameter' && fromNode.kind !== 'function')) return;
-      const p = pinGraphPosition(fromNode, 'out');
+      if (
+        !fromNode ||
+        (fromNode.kind !== 'parameter' &&
+          fromNode.kind !== 'function' &&
+          fromNode.kind !== 'generate' &&
+          fromNode.kind !== 'group' &&
+          fromNode.kind !== 'groupInput')
+      ) {
+        return;
+      }
+      const p = pinGraphPosition(fromNode, incoming.from.port, state.edges);
       e.preventDefault();
       e.stopPropagation();
       pendingInputWireRef.current = {
         edgeId: incoming.id,
         fromNodeId: incoming.from.nodeId,
+        fromPort: incoming.from.port,
         colorId: incoming.colorId,
         pinX: p.x,
         pinY: p.y,
@@ -609,7 +690,14 @@ export function GraphCanvas() {
         wireDragRef.current = null;
         return;
       }
-      const valid = canPreviewEdge(state.nodes, wd.fromNodeId, toNodeId, port);
+      const valid = canPreviewEdge(
+        state.nodes,
+        state.edges,
+        wd.fromNodeId,
+        toNodeId,
+        port,
+        wd.fromPort
+      );
       if (valid && !edgeTaken(toNodeId, port)) {
         const id =
           typeof crypto !== 'undefined' && crypto.randomUUID
@@ -617,7 +705,7 @@ export function GraphCanvas() {
             : `e-${Date.now()}`;
         connectEdge({
           id,
-          from: { nodeId: wd.fromNodeId, port: 'out' },
+          from: { nodeId: wd.fromNodeId, port: wd.fromPort },
           to: { nodeId: toNodeId, port },
           colorId: valid,
         });
@@ -625,7 +713,7 @@ export function GraphCanvas() {
       setWireDrag(null);
       wireDragRef.current = null;
     },
-    [state.nodes, connectEdge, edgeTaken, dispatch]
+    [state.nodes, state.edges, connectEdge, edgeTaken, dispatch]
   );
 
   const ghostPath = useMemo(() => {
@@ -664,14 +752,36 @@ export function GraphCanvas() {
         return;
       }
       if (mod && e.code === 'KeyG') {
+        if (state.selectedIds.length === 0) return;
         e.preventDefault();
         dispatch({ type: 'groupSelection' });
         return;
       }
       if (mod && e.code === 'KeyU') {
+        if (state.selectedIds.length === 0) return;
         e.preventDefault();
         dispatch({ type: 'ungroupSelection' });
         return;
+      }
+      if (e.code === 'Escape' && state.graphScope) {
+        e.preventDefault();
+        dispatch({ type: 'exitGroupScope' });
+        return;
+      }
+      if (
+        e.code === 'Enter' &&
+        !mod &&
+        !e.shiftKey &&
+        !state.graphScope &&
+        state.selectedIds.length === 1
+      ) {
+        const id = state.selectedIds[0]!;
+        const gn = state.nodes.find((n) => n.id === id && n.kind === 'group');
+        if (gn) {
+          e.preventDefault();
+          dispatch({ type: 'enterGroupScope', groupId: gn.id });
+          return;
+        }
       }
       if (e.code === 'Delete' || e.code === 'Backspace') {
         e.preventDefault();
@@ -691,18 +801,30 @@ export function GraphCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dispatch, graphViewCenter, runFrameSelection]);
+  }, [
+    dispatch,
+    graphViewCenter,
+    runFrameSelection,
+    state.selectedIds.length,
+    state.graphScope,
+    state.nodes,
+    state.selectedIds,
+  ]);
 
   const isOutputConnected = useCallback(
     (nodeId: string) =>
-      state.edges.some((ed) => ed.from.nodeId === nodeId && ed.from.port === 'out'),
+      state.edges.some(
+        (ed) =>
+          ed.from.nodeId === nodeId &&
+          (ed.from.port === 'out' || /^out-\d+$/.test(ed.from.port))
+      ),
     [state.edges]
   );
 
   const isInputConnected = useCallback(
     (nodeId: string, port: `in-${number}`) =>
-      state.edges.some((ed) => ed.to.nodeId === nodeId && ed.to.port === port),
-    [state.edges]
+      isInputConnectedWithGroupBridges(state.nodes, state.edges, nodeId, port),
+    [state.edges, state.nodes]
   );
 
   return (
@@ -735,6 +857,40 @@ export function GraphCanvas() {
           />
         </div>
       ) : null}
+      {state.graphScope ? (
+        <div
+          className="flex-row items-center gap-sm text-sm"
+          style={{
+            position: 'absolute',
+            top: state.playMode ? 52 : 12,
+            left: 12,
+            zIndex: 21,
+            pointerEvents: 'auto',
+            padding: '6px 10px',
+            borderRadius: 8,
+            background: 'var(--studio-surface-100)',
+            border: '1px solid var(--studio-stroke)',
+            maxWidth: 480,
+          }}
+        >
+          <button
+            type="button"
+            className="text-sm underline-offset-2 hover:underline"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            onClick={() => dispatch({ type: 'exitGroupScope' })}
+          >
+            ← Parent graph
+          </button>
+          <span className="text-muted">/</span>
+          <span className="font-medium">
+            {state.nodes.find((n) => n.id === state.graphScope && n.kind === 'group')?.title ??
+              'Group'}
+          </span>
+          <span className="text-muted text-xs">
+            Esc or double-click Group Input / Group Output to exit
+          </span>
+        </div>
+      ) : null}
       <div
         data-graph-backdrop
         style={{
@@ -758,13 +914,17 @@ export function GraphCanvas() {
             overflow: 'visible',
           }}
         >
-          {state.edges.map((edge) => {
-            const d = edgePath(edge, state.nodes);
+          {state.edges
+            .filter((edge) => edgeVisibleForGraphScope(edge, state.graphScope, state.nodes))
+            .map((edge) => {
+            const d = edgePath(edge, state.nodes, state.edges);
             if (!d) return null;
-            const hex = PIN_HEX[edge.colorId];
+            const hex = resolveGraphPinHex(edge.colorId, state.extendedPalette);
             const wireId = `wire-${edge.id}`;
             const fromNode = state.nodes.find((n) => n.id === edge.from.nodeId);
-            const fromDisabled = fromNode?.disabled === true;
+            const fromDisabled = Boolean(
+              fromNode && 'disabled' in fromNode && fromNode.disabled
+            );
             const showFlow =
               state.playMode && state.graphPlayActive && !fromDisabled;
             return (
@@ -808,7 +968,9 @@ export function GraphCanvas() {
             height: WORLD_H,
           }}
         >
-          {state.nodes.map((node) => {
+          {state.nodes
+            .filter((node) => nodeVisibleForGraphScope(node.id, state.graphScope, state.nodes))
+            .map((node) => {
             const selected = state.selectedIds.includes(node.id);
             const select = (ev: React.PointerEvent) =>
               dispatch({
@@ -821,7 +983,8 @@ export function GraphCanvas() {
               const progressiveCardOpacity = progressiveWholeNodeOpacity(
                 node,
                 wireDrag,
-                state.progressiveConnections
+                state.progressiveConnections,
+                state.edges
               );
               return (
                 <ParameterNodeView
@@ -855,8 +1018,11 @@ export function GraphCanvas() {
               ) => {
                 const ports = portsForInputGroupSlot(node, groupSlotIndex);
                 for (const p of ports) {
-                  const incoming = state.edges.find(
-                    (ed) => ed.to.nodeId === node.id && ed.to.port === p
+                  const incoming = findIncomingEdgeToPort(
+                    state.nodes,
+                    state.edges,
+                    node.id,
+                    p
                   );
                   if (incoming) {
                     handleInputPointerDown(node.id, p, e);
@@ -871,21 +1037,28 @@ export function GraphCanvas() {
                 const ports = portsForInputGroupSlot(node, groupSlotIndex);
                 const free = ports.find(
                   (p) =>
-                    !state.edges.some((ed) => ed.to.nodeId === node.id && ed.to.port === p)
+                    !isInputConnectedWithGroupBridges(
+                      state.nodes,
+                      state.edges,
+                      node.id,
+                      p
+                    )
                 );
                 if (free) handleInputUp(node.id, free, e);
               };
               const progressiveCardOpacity = progressiveWholeNodeOpacity(
                 node,
                 wireDrag,
-                state.progressiveConnections
+                state.progressiveConnections,
+                state.edges
               );
               const progressiveInputPinMult = (port: `in-${number}`) =>
                 progressiveInputPinMultiplier(
                   node,
                   port,
                   wireDrag,
-                  state.progressiveConnections
+                  state.progressiveConnections,
+                  state.edges
                 );
               return (
                 <FunctionNodeView
@@ -937,10 +1110,232 @@ export function GraphCanvas() {
               );
             }
 
+            if (node.kind === 'group') {
+              const onCollapsedInputGroupPointerDown = (
+                groupSlotIndex: number,
+                e: React.PointerEvent
+              ) => {
+                const ports = portsForInputGroupSlot(node, groupSlotIndex);
+                for (const p of ports) {
+                  const incoming = findIncomingEdgeToPort(
+                    state.nodes,
+                    state.edges,
+                    node.id,
+                    p
+                  );
+                  if (incoming) {
+                    handleInputPointerDown(node.id, p, e);
+                    return;
+                  }
+                }
+              };
+              const onCollapsedInputGroupPointerUp = (
+                groupSlotIndex: number,
+                e: React.PointerEvent
+              ) => {
+                const ports = portsForInputGroupSlot(node, groupSlotIndex);
+                const free = ports.find(
+                  (p) =>
+                    !isInputConnectedWithGroupBridges(
+                      state.nodes,
+                      state.edges,
+                      node.id,
+                      p
+                    )
+                );
+                if (free) handleInputUp(node.id, free, e);
+              };
+              const progressiveCardOpacity = progressiveWholeNodeOpacity(
+                node,
+                wireDrag,
+                state.progressiveConnections,
+                state.edges
+              );
+              const progressiveInputPinMult = (port: `in-${number}`) =>
+                progressiveInputPinMultiplier(
+                  node,
+                  port,
+                  wireDrag,
+                  state.progressiveConnections,
+                  state.edges
+                );
+              return (
+                <FunctionNodeView
+                  key={node.id}
+                  node={node}
+                  canvasReadOnly
+                  selected={selected}
+                  progressiveCardOpacity={progressiveCardOpacity}
+                  progressiveInputPinMultiplier={progressiveInputPinMult}
+                  inputConnected={(port) => isInputConnected(node.id, port)}
+                  outputConnected={isOutputConnected(node.id)}
+                  onSelect={select}
+                  onToggleExpand={() =>
+                    dispatch({ type: 'toggleExpanded', id: node.id })
+                  }
+                  onTitleCommit={(title) =>
+                    dispatch({ type: 'updateGroup', id: node.id, patch: { title } })
+                  }
+                  onTitleDragStart={(c) => startDragFromPointer(node.id, c)}
+                  onHeaderDragPointerDown={(e) => moveNodeStart(node.id, e)}
+                  onInputPointerDown={(port, e) =>
+                    handleInputPointerDown(node.id, port, e)
+                  }
+                  onInputPointerUp={(port, e) => handleInputUp(node.id, port, e)}
+                  onOutputPointerDown={(e) => handleOutputDown(node.id, e)}
+                  onSlotPatch={() => {}}
+                  onInputGroupChildPatch={() => {}}
+                  onCollapsedInputGroupPointerDown={onCollapsedInputGroupPointerDown}
+                  onCollapsedInputGroupPointerUp={onCollapsedInputGroupPointerUp}
+                  onResizeEdgePointerDown={(edge, e) =>
+                    startNodeResize(node.id, edge, e)
+                  }
+                  onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                  onGraphShellDoubleClick={() =>
+                    dispatch({ type: 'enterGroupScope', groupId: node.id })
+                  }
+                />
+              );
+            }
+
+            if (node.kind === 'generate') {
+              const progressiveCardOpacity = progressiveWholeNodeOpacity(
+                node,
+                wireDrag,
+                state.progressiveConnections,
+                state.edges
+              );
+              return (
+                <GenerateNodeView
+                  key={node.id}
+                  node={node}
+                  selected={selected}
+                  progressiveCardOpacity={progressiveCardOpacity}
+                  outputConnected={isOutputConnected(node.id)}
+                  inputConnected={(port) => isInputConnected(node.id, port)}
+                  edges={state.edges}
+                  onSelect={select}
+                  onToggleExpand={() =>
+                    dispatch({ type: 'toggleExpanded', id: node.id })
+                  }
+                  onTitleCommit={(title) =>
+                    dispatch({
+                      type: 'updateGenerate',
+                      id: node.id,
+                      patch: { title },
+                    })
+                  }
+                  onTitleDragStart={(c) => startDragFromPointer(node.id, c)}
+                  onHeaderDragPointerDown={(e) => moveNodeStart(node.id, e)}
+                  onOutputPointerDown={(e) => handleOutputDown(node.id, e)}
+                  onInputPointerDown={(port, e) =>
+                    handleInputPointerDown(node.id, port, e)
+                  }
+                  onInputPointerUp={(port, e) => handleInputUp(node.id, port, e)}
+                  onPromptTextChange={(promptText) =>
+                    dispatch({
+                      type: 'updateGenerate',
+                      id: node.id,
+                      patch: { promptText },
+                    })
+                  }
+                  onToggleInputGroup={() =>
+                    dispatch({
+                      type: 'updateGenerate',
+                      id: node.id,
+                      patch: { inputGroupExpanded: !node.inputGroupExpanded },
+                    })
+                  }
+                  onRun={() =>
+                    dispatch({
+                      type: 'updateGenerate',
+                      id: node.id,
+                      patch: {
+                        generativePhase:
+                          node.generativePhase === 'prompt' ? 'output' : 'prompt',
+                      },
+                    })
+                  }
+                  onResizeEdgePointerDown={(edge, e) =>
+                    startNodeResize(node.id, edge, e)
+                  }
+                  onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                />
+              );
+            }
+
+            if (node.kind === 'groupInput') {
+              const progressiveCardOpacity = progressiveWholeNodeOpacity(
+                node,
+                wireDrag,
+                state.progressiveConnections,
+                state.edges
+              );
+              return (
+                <GroupInputNodeView
+                  key={node.id}
+                  node={node}
+                  selected={selected}
+                  progressiveCardOpacity={progressiveCardOpacity}
+                  outputConnected={(port) =>
+                    state.edges.some(
+                      (ed) => ed.from.nodeId === node.id && ed.from.port === port
+                    )
+                  }
+                  onSelect={select}
+                  onTitleDragStart={(c) => startDragFromPointer(node.id, c)}
+                  onHeaderDragPointerDown={(e) => moveNodeStart(node.id, e)}
+                  onOutputPointerDown={(port, e) => handleOutputDown(node.id, e, port)}
+                  onResizeEdgePointerDown={(edge, e) =>
+                    startNodeResize(node.id, edge, e)
+                  }
+                  onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                  onExitSubgraph={
+                    state.graphScope ? () => dispatch({ type: 'exitGroupScope' }) : undefined
+                  }
+                />
+              );
+            }
+
+            if (node.kind === 'groupOutput') {
+              const progressiveCardOpacity = progressiveWholeNodeOpacity(
+                node,
+                wireDrag,
+                state.progressiveConnections,
+                state.edges
+              );
+              return (
+                <GroupOutputNodeView
+                  key={node.id}
+                  node={node}
+                  selected={selected}
+                  progressiveCardOpacity={progressiveCardOpacity}
+                  inputConnected={isInputConnected(node.id, 'in-0')}
+                  onSelect={select}
+                  onTitleDragStart={(c) => startDragFromPointer(node.id, c)}
+                  onHeaderDragPointerDown={(e) => moveNodeStart(node.id, e)}
+                  onInputPointerDown={(e) =>
+                    handleInputPointerDown(node.id, 'in-0', e)
+                  }
+                  onInputPointerUp={(e) => handleInputUp(node.id, 'in-0', e)}
+                  onResizeEdgePointerDown={(edge, e) =>
+                    startNodeResize(node.id, edge, e)
+                  }
+                  onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                  onExitSubgraph={
+                    state.graphScope ? () => dispatch({ type: 'exitGroupScope' }) : undefined
+                  }
+                />
+              );
+            }
+
+            if (node.kind !== 'output') return null;
+
             const progressiveCardOpacity = progressiveWholeNodeOpacity(
               node,
               wireDrag,
-              state.progressiveConnections
+              state.progressiveConnections,
+              state.edges
             );
             return (
               <OutputNodeView
@@ -983,8 +1378,8 @@ export function GraphCanvas() {
             <path
               d={ghostPath}
               fill="none"
-              stroke={PIN_HEX[wireDrag.colorId]}
-              strokeWidth={2}
+              stroke={resolveGraphPinHex(wireDrag.colorId, state.extendedPalette)}
+              strokeWidth={GRAPH_WIRE_STROKE_PX}
               strokeLinecap="round"
               opacity={0.5}
             />
@@ -1006,6 +1401,7 @@ export function GraphCanvas() {
         parameterRows={state.nodes
           .filter((n) => n.kind === 'parameter')
           .map((n) => ({ id: n.id, title: n.title }))}
+        colorRows={insertNodeColorRows}
         onInsertFunctionNode={(outputPinColor) => {
           if (!contextMenu) return;
           dispatch({
@@ -1076,6 +1472,11 @@ export function GraphCanvas() {
           setContextMenu(null);
           dispatch({ type: 'ungroupSelection' });
         }}
+        ungroupDisabled={
+          !state.nodes.some(
+            (n) => n.kind === 'group' && state.selectedIds.includes(n.id)
+          )
+        }
       />
 
       <NodeContextMenu
@@ -1083,6 +1484,18 @@ export function GraphCanvas() {
         position={nodeContextMenu}
         onClose={() => setNodeContextMenu(null)}
         hasClipboard={(state.clipboard?.nodes.length ?? 0) > 0}
+        hasSelection={state.selectedIds.length > 0}
+        ungroupDisabled={
+          !state.nodes.some(
+            (n) => n.kind === 'group' && state.selectedIds.includes(n.id)
+          )
+        }
+        swapNodeDisabled={
+          nodeContextMenu
+            ? state.nodes.find((n) => n.id === nodeContextMenu.nodeId)?.kind === 'group'
+            : false
+        }
+        colorRows={insertNodeColorRows}
         onSwapNode={(outputPinColor) => {
           if (!nodeContextMenu) return;
           dispatch({

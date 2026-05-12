@@ -8,11 +8,13 @@ import {
   graphNodeWidth,
   nodeHeight,
   ROW_H,
+  NODE_ROW_PIN_CENTER_Y_OFFSET,
+  GRAPH_PIN_DIAMETER_PX,
   layoutFunctionInputPorts,
   portsForInputGroupSlot,
 } from '../geometry';
-import type { FunctionNode, FunctionSlot } from '../types';
-import { NODE_HEADER_HEX } from '../pinColors';
+import type { FunctionNode, FunctionSlot, GroupNode } from '../types';
+import { resolveGraphHeaderHex } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodePropertySlotControl } from '../nodePropertyUi';
 import { NodeShell } from '../NodeShell';
@@ -22,7 +24,9 @@ import chevronCollapsedUrl from '../../assets/icons/node-header-chevron-collapse
 import chevronExpandedUrl from '../../assets/icons/node-header-chevron-expanded.svg?url';
 
 type Props = {
-  node: FunctionNode;
+  node: FunctionNode | GroupNode;
+  /** When true, body rows do not mutate slots (used for {@link GroupNode} on the canvas). */
+  canvasReadOnly?: boolean;
   selected: boolean;
   /** Experimental progressive connections: whole-card dim (default 1). */
   progressiveCardOpacity?: number;
@@ -48,6 +52,8 @@ type Props = {
   onCollapsedInputGroupPointerUp?: (groupSlotIndex: number, e: React.PointerEvent) => void;
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
+  /** Double-click the card shell (e.g. group on parent graph) to enter a subgraph. */
+  onGraphShellDoubleClick?: () => void;
 };
 
 function groupExpanded(slot: FunctionSlot): boolean {
@@ -70,6 +76,7 @@ function dimInputPinWrapper(disabled: boolean, connected: boolean) {
 
 export function FunctionNodeView({
   node,
+  canvasReadOnly = false,
   selected,
   progressiveCardOpacity = 1,
   progressiveInputPinMultiplier,
@@ -89,6 +96,7 @@ export function FunctionNodeView({
   onCollapsedInputGroupPointerUp,
   onResizeEdgePointerDown,
   onNodeContextMenu,
+  onGraphShellDoubleClick,
 }: Props) {
   const { state: graphState } = useGraph();
   const portLayouts = layoutFunctionInputPorts(node);
@@ -125,7 +133,7 @@ export function FunctionNodeView({
         key={`${node.id}-slot-${slotIndex}`}
         style={{
           position: 'relative',
-          minHeight: ROW_H,
+          height: ROW_H,
           ...nodeRow,
         }}
       >
@@ -133,7 +141,7 @@ export function FunctionNodeView({
           style={{
             position: 'absolute',
             left: 0,
-            top: '50%',
+            top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
             transform: 'translate(-50%, -50%)',
             opacity:
               dimInputPinWrapper(Boolean(node.disabled), conn) * progressivePinFactor(port),
@@ -188,11 +196,6 @@ export function FunctionNodeView({
     const expanded = groupExpanded(slot);
     const groupPin = slot.inputPinColor;
     const groupPorts = portsForInputGroupSlot(node, slotIndex);
-    const stubConnected = groupPorts.some((p) => inputConnected(p));
-    const stubPort = groupPorts[0];
-    const stubProg =
-      stubPort != null ? progressivePinFactor(stubPort) : 1;
-
     return (
       <div
         key={`${node.id}-ig-${slotIndex}`}
@@ -203,16 +206,17 @@ export function FunctionNodeView({
           flexDirection: 'column',
           width: '100%',
           minWidth: 0,
+          overflow: expanded ? 'visible' : 'hidden',
         }}
       >
         <div
           className="flex-row items-center gap-sm"
           style={{
             position: 'relative',
-            minHeight: ROW_H,
+            height: ROW_H,
+            boxSizing: 'border-box',
             paddingLeft: 4,
             paddingRight: 8,
-            boxSizing: 'border-box',
           }}
         >
           {!expanded && groupPorts.length > 0 ? (
@@ -220,11 +224,14 @@ export function FunctionNodeView({
               style={{
                 position: 'absolute',
                 left: 0,
-                top: '50%',
+                top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
-                opacity:
-                  dimInputPinWrapper(Boolean(node.disabled), stubConnected) * stubProg,
+                width: GRAPH_PIN_DIAMETER_PX,
+                height: GRAPH_PIN_DIAMETER_PX,
+                opacity: 0,
+                touchAction: 'none',
               }}
+              aria-hidden
               onPointerDown={(e) => {
                 e.stopPropagation();
                 onCollapsedInputGroupPointerDown?.(slotIndex, e);
@@ -233,13 +240,7 @@ export function FunctionNodeView({
                 e.stopPropagation();
                 onCollapsedInputGroupPointerUp?.(slotIndex, e);
               }}
-            >
-              <Pin
-                colorId={groupPin}
-                connected={stubConnected}
-                clipOuterStrokeOn="left"
-              />
-            </div>
+            />
           ) : null}
           <div
             className="flex-row items-center gap-sm flex-1 min-w-0"
@@ -264,6 +265,7 @@ export function FunctionNodeView({
               }}
               onClick={(e) => {
                 e.stopPropagation();
+                if (canvasReadOnly) return;
                 onSlotPatch(slotIndex, { inputGroupExpanded: !expanded });
               }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -296,7 +298,7 @@ export function FunctionNodeView({
                   key={`${node.id}-ig-${slotIndex}-c-${childIndex}`}
                   style={{
                     position: 'relative',
-                    minHeight: ROW_H,
+                    height: ROW_H,
                     ...nodeRow,
                   }}
                 >
@@ -304,7 +306,7 @@ export function FunctionNodeView({
                     style={{
                       position: 'absolute',
                       left: 0,
-                      top: '50%',
+                      top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                       transform: 'translate(-50%, -50%)',
                       opacity:
                         dimInputPinWrapper(Boolean(node.disabled), childConn) *
@@ -374,10 +376,17 @@ export function FunctionNodeView({
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);
       }}
+      onDoubleClick={() => {
+        onGraphShellDoubleClick?.();
+      }}
     >
       <div style={{ position: 'relative', zIndex: 1, minHeight: h }}>
         {onResizeEdgePointerDown ? (
-          <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
+          <NodeResizeEdges
+            node={node}
+            edges={graphState.edges}
+            onEdgePointerDown={onResizeEdgePointerDown}
+          />
         ) : null}
         <NodeShell
           title={node.title}
@@ -389,7 +398,7 @@ export function FunctionNodeView({
             />
           }
           frameVariant={node.frameVariant}
-          headerFillOverride={NODE_HEADER_HEX[node.outputPinColor]}
+          headerFillOverride={resolveGraphHeaderHex(node.outputPinColor, graphState.extendedPalette)}
           selected={selected}
           width={w}
           expanded={node.expanded}

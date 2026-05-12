@@ -13,10 +13,10 @@ function newId(prefix: string): string {
     : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function cloneGraphNode(n: GraphNode): GraphNode {
+function cloneGraphNode(n: GraphNode, extendedPalette: boolean): GraphNode {
   const raw = structuredClone(n) as GraphNode;
-  if (raw.kind === 'function' && raw.slots) {
-    raw.slots = raw.slots.map((s) => normalizeFunctionSlot(s));
+  if ((raw.kind === 'function' || raw.kind === 'group') && raw.slots) {
+    raw.slots = raw.slots.map((s) => normalizeFunctionSlot(s, extendedPalette));
   }
   return raw;
 }
@@ -34,28 +34,33 @@ export function inducedEdgesForNodes(
 export function buildClipboardFromSelection(
   nodes: GraphNode[],
   edges: GraphEdge[],
-  selectedIds: readonly string[]
+  selectedIds: readonly string[],
+  extendedPalette: boolean
 ): GraphClipboard | null {
   if (selectedIds.length === 0) return null;
   const set = new Set(selectedIds);
   const picked = nodes.filter((n) => set.has(n.id));
   if (picked.length === 0) return null;
+  if (picked.some((n) => n.kind === 'group')) return null;
   const nodeIds = new Set(picked.map((n) => n.id));
   const pickedEdges = inducedEdgesForNodes(edges, nodeIds);
   return {
-    nodes: picked.map((n) => cloneGraphNode(n)),
+    nodes: picked.map((n) => cloneGraphNode(n, extendedPalette)),
     edges: pickedEdges.map((e) => ({ ...e })),
   };
 }
 
-export function bboxCenterOfNodes(nodes: GraphNode[]): { cx: number; cy: number } {
+export function bboxCenterOfNodes(
+  nodes: GraphNode[],
+  edges: readonly GraphEdge[] = []
+): { cx: number; cy: number } {
   let minGX = Infinity;
   let minGY = Infinity;
   let maxGX = -Infinity;
   let maxGY = -Infinity;
   for (const n of nodes) {
     const w = graphNodeWidth(n);
-    const h = nodeHeight(n);
+    const h = nodeHeight(n, edges);
     minGX = Math.min(minGX, n.x);
     minGY = Math.min(minGY, n.y);
     maxGX = Math.max(maxGX, n.x + w);
@@ -69,7 +74,10 @@ function withNodeId(n: GraphNode, id: string): GraphNode {
 }
 
 /** Clone bundle nodes with new ids; remap edges to new ids (both ends must be in bundle). */
-export function remapClipboardPaste(bundle: GraphClipboard): {
+export function remapClipboardPaste(
+  bundle: GraphClipboard,
+  extendedPalette: boolean
+): {
   nodes: GraphNode[];
   edges: GraphEdge[];
   newSelectedIds: string[];
@@ -82,7 +90,7 @@ export function remapClipboardPaste(bundle: GraphClipboard): {
 
   const nodes = bundle.nodes.map((n) => {
     const nid = idMap.get(n.id)!;
-    return withNodeId(cloneGraphNode(n), nid);
+    return withNodeId(cloneGraphNode(n, extendedPalette), nid);
   });
 
   const edges: GraphEdge[] = [];

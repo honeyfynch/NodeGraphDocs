@@ -11,6 +11,21 @@
   --studio-surface-100: #191a1f;
   --studio-surface-200: #202227;
   --studio-header-neutral: #494d5a;
+  /**
+   * Generate node `368:23582` — Figma `get_design_context` + `get_variable_defs`:
+   * `Gray/Gray_600` header, `bg/surface-200` body, `radius/small` card, `stroke/default` dividers.
+   */
+  --studio-generate-header: #494d5a;
+  --studio-generate-body: #202227;
+  /** TextArea `ContentArea` — variable `bg/shift-200` `#d0d9fb14`. */
+  --studio-generate-textarea-shift: #d0d9fb14;
+  --studio-generate-textarea-radius: 4px;
+  /** `FDKUtilities/Component/Highlight` — media placeholder tint + label. */
+  --studio-generate-highlight: #b682f7;
+  /** Section rules — `stroke/default` / rgba(208,217,251,0.12) in canvas export. */
+  --studio-generate-divider: rgba(208, 217, 251, 0.12);
+  /** Outer node — `radius/small` (Generate frame `368:23582`). */
+  --studio-generate-node-radius: 4px;
   --studio-header-emphasis: rgb(51, 95, 255);
   --studio-header-muted: #3a3d47;
   /** Figma `stroke/default` + `Color/Stroke/Default` from `get_variable_defs` on Node `73:26702`. */
@@ -21,6 +36,8 @@
   --graph-pin-tooltip-bg: #ffffff;
   --graph-pin-tooltip-text: #202227;
   --graph-pin-tooltip-shadow: rgba(4, 4, 8, 0.25);
+  /** Must match `GRAPH_PIN_DIAMETER_PX` in `src/graph/geometry.ts` (socket layout + wire attach). */
+  --graph-pin-diameter: 9px;
   --studio-content-default: #d5d7dd;
   --studio-content-muted: #bcbec8;
   --studio-content-emphasis: #f7f7f8;
@@ -66,6 +83,9 @@
   --alpha-text-labelsmall-line-height: 18px;
   --alpha-text-labelsmall-font-weight: 600;
   --alpha-text-labelsmall-letter-spacing: 0px;
+  --alpha-text-bodylarge-font-size: 16px;
+  --alpha-text-bodylarge-line-height: 22px;
+  --alpha-text-bodylarge-letter-spacing: 0px;
 }
 
 body.graph-app-body {
@@ -218,12 +238,12 @@ body.graph-app-body {
   vertical-align: middle;
 }
 
-/* Graph pin: outer 1px surface ring split out and clipped so it only shows over node bounds. */
+/* Graph pin: outer 2px surface ring split out and clipped so it only shows over node bounds. */
 .graph-pin-root {
   position: relative;
   display: inline-flex;
-  width: 9px;
-  height: 9px;
+  width: var(--graph-pin-diameter);
+  height: var(--graph-pin-diameter);
   flex-shrink: 0;
   vertical-align: middle;
   align-items: center;
@@ -242,18 +262,19 @@ body.graph-app-body {
   /*
    * Hide outer ring only on the wire/canvas side. Inset must stay tighter than a 50% bisect so
    * the ring still paints over the node’s 1px border (selection uses `border-color` on the card).
+   * Slightly wider clip than the 1px ring so a 2px `box-shadow` ring does not leak toward the wire.
    */
-  clip-path: inset(-4px 18% -4px -4px);
+  clip-path: inset(-4px 24% -4px -4px);
 }
 .graph-pin-outer-ring-slot--clip-left {
-  clip-path: inset(-4px -4px -4px 18%);
+  clip-path: inset(-4px -4px -4px 24%);
 }
 .graph-pin-outer-ring {
   position: absolute;
   inset: 0;
   border-radius: 50%;
   box-sizing: border-box;
-  box-shadow: 0 0 0 1px var(--studio-surface-0);
+  box-shadow: 0 0 0 2px var(--studio-surface-0);
 }
 .graph-pin-core {
   position: relative;
@@ -801,6 +822,46 @@ body.graph-app-body {
 
 .btn-studio-emphasis:hover {
   filter: brightness(1.06);
+}
+
+/**
+ * Foundation **Button / Standard / XSmall** — Figma Button `163:39937` + Generate Run row `163:47480`
+ * (`get_design_context` / `get_variable_defs`): `Color/ActionStandard/*`, LabelSmall typography.
+ */
+.btn-studio.btn-studio--xsmall {
+  box-sizing: border-box;
+  min-height: 24px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--studio-radius);
+  border: 1px solid transparent;
+  background: #d0d9fb1f;
+  color: #f7f7f8;
+  font-size: var(--alpha-text-labelsmall-font-size);
+  line-height: var(--alpha-text-labelsmall-line-height);
+  font-weight: var(--alpha-text-labelsmall-font-weight);
+  letter-spacing: var(--alpha-text-labelsmall-letter-spacing);
+}
+
+.btn-studio.btn-studio--xsmall:hover {
+  background: rgba(208, 217, 251, 0.16);
+}
+
+.generate-node-prompt-textarea::placeholder {
+  color: var(--studio-content-default);
+}
+
+/** Generate prompt field — no Foundation/BaseInput focus ring on canvas (Figma idle border is transparent). */
+.generate-node-prompt-textarea:focus,
+.generate-node-prompt-textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: none;
+}
+
+.generate-node-prompt-shift:focus-within {
+  outline: none;
+  box-shadow: none;
 }
 
 /* Figma `80:68682` focused header TextInput — `.Highlight` fill on selection */

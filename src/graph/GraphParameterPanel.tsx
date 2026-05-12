@@ -3,9 +3,10 @@ import chevronCollapsedUrl from '../assets/icons/node-header-chevron-collapsed.s
 import chevronExpandedUrl from '../assets/icons/node-header-chevron-expanded.svg?url';
 import { GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE } from './graphInsertNodeMenu';
 import { GraphMenuColorFlyout } from './graphMenuShared';
+import { graphInsertNodeSubmenuRows } from './graphInsertNodeMenu';
 import { HEADER_H, ROW_H } from './geometry';
 import { useGraph } from './GraphContext';
-import type { PinColorId } from './pinColors';
+import type { GraphWireColorId } from './pinColors';
 import type { ParameterNode } from './types';
 
 const PANEL_W = 200;
@@ -204,6 +205,10 @@ export function GraphParameterPanel() {
     () => state.nodes.filter((n): n is ParameterNode => n.kind === 'parameter'),
     [state.nodes]
   );
+  const insertNodeColorRows = useMemo(
+    () => graphInsertNodeSubmenuRows(state.extendedPalette),
+    [state.extendedPalette]
+  );
 
   const panelWrapRef = useRef<HTMLDivElement>(null);
   const newParamColorFlyoutRef = useRef<HTMLDivElement>(null);
@@ -233,7 +238,7 @@ export function GraphParameterPanel() {
   }, [newParamColorMenuOpen, closeColorMenu]);
 
   const dispatchNewParameter = useCallback(
-    (outputPinColor: PinColorId) => {
+    (outputPinColor: GraphWireColorId) => {
       const last = parameters[parameters.length - 1];
       const gx = last ? last.x + 120 : 80;
       const gy = last ? last.y + 56 : 200;
@@ -399,6 +404,7 @@ export function GraphParameterPanel() {
         mainMenuRef={panelWrapRef}
         flyoutRef={newParamColorFlyoutRef}
         menuPosition={null}
+        colorRows={insertNodeColorRows}
         onPickColor={(c) => {
           dispatchNewParameter(c);
           closeColorMenu();

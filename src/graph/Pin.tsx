@@ -1,9 +1,11 @@
 import clsx from 'clsx';
-import type { PinColorId } from './pinColors';
-import { PIN_HEX, formatPinColorOption } from './pinColors';
+import { useGraph } from './GraphContext';
+import { GRAPH_PIN_DIAMETER_PX } from './geometry';
+import type { GraphWireColorId } from './pinColors';
+import { formatGraphWireColorOption, resolveGraphPinHex } from './pinColors';
 
 type Props = {
-  colorId: PinColorId;
+  colorId: GraphWireColorId;
   connected: boolean;
   /**
    * When true (default), show the Figma tooltip (`113:20106`) with the palette name on hover
@@ -11,7 +13,7 @@ type Props = {
    */
   showColorTooltip?: boolean;
   /**
-   * On the graph, the 1px outer ring (`--studio-surface-0`) is clipped on this side so it only
+   * On the graph, the 2px outer ring (`--studio-surface-0`) is clipped on this side so it only
    * appears over node chrome, not over the wire/canvas (output pins: `right`, inputs: `left`).
    */
   clipOuterStrokeOn?: 'left' | 'right';
@@ -19,8 +21,8 @@ type Props = {
 
 /**
  * 9×9 socket — `connected`: palette fill. Idle: same inner stroke, fill matches graph canvas /
- * `--studio-surface-0`. Figma adds a 1px **outer** stroke in `Color/Surface/Surface_0` — mirrored
- * with `box-shadow` on a clipped layer so wires can meet the pin without a halo on the canvas.
+ * `--studio-surface-0`. Outer **surface** ring uses `box-shadow` on a clipped layer so it only
+ * paints over node chrome on the inward side; wires meet the pin without a halo on the canvas.
  */
 export function Pin({
   colorId,
@@ -28,14 +30,16 @@ export function Pin({
   showColorTooltip = true,
   clipOuterStrokeOn,
 }: Props) {
-  const hex = PIN_HEX[colorId];
-  const colorName = formatPinColorOption(colorId);
+  const { state } = useGraph();
+  const hex = resolveGraphPinHex(colorId, state.extendedPalette);
+  const colorName = formatGraphWireColorOption(colorId, state.extendedPalette);
+
   const core = (
     <div
       className="graph-pin-core"
       style={{
-        width: 9,
-        height: 9,
+        width: GRAPH_PIN_DIAMETER_PX,
+        height: GRAPH_PIN_DIAMETER_PX,
         borderRadius: '50%',
         flexShrink: 0,
         boxSizing: 'border-box',

@@ -9,8 +9,10 @@ import {
 import type {
   FunctionNode,
   FunctionSlot,
+  GenerateNode,
   GraphEdge,
   GraphNode,
+  GroupNode,
   OutputNode,
   ParameterNode,
 } from './types';
@@ -19,7 +21,14 @@ import {
   normalizeFunctionSlot,
   ROW_PROPERTY_TYPE_IDS,
 } from './types';
-import { PIN_COLOR_IDS, type PinColorId } from './pinColors';
+import {
+  PIN_COLOR_IDS,
+  FOUNDATION_PALETTE_IDS,
+  coerceGraphWireColorForPaletteMode,
+  toFoundationPaletteId,
+  toPinColorId,
+  type GraphWireColorId,
+} from './pinColors';
 import {
   GRAPH_NODE_MAX_W,
   graphNodeMinWidth,
@@ -33,13 +42,28 @@ import {
   translateNodes,
   type GraphClipboard,
 } from './graphClipboardOps';
+import {
+  applyGroupSelection,
+  applyUngroupSelection,
+  expandDeleteIdsForGroupsAndRestoreEdges,
+  isInputConnectedWithGroupBridges,
+} from './graphGroupOps';
 
 const TOP_LEVEL_ROW_TYPES = ROW_PROPERTY_TYPE_IDS.filter((t) => t !== 'inputGroup');
 
 /** Two input pin colors for new functions (any palette entries other than this node’s output). */
-function defaultCrossPeersForNodeColor(nodeColor: PinColorId): [PinColorId, PinColorId] {
-  const others = PIN_COLOR_IDS.filter((c) => c !== nodeColor);
-  return [others[0] ?? 'gray', others[1] ?? 'gray'];
+function defaultCrossPeersForNodeColor(
+  nodeColor: GraphWireColorId,
+  extendedPalette: boolean
+): [GraphWireColorId, GraphWireColorId] {
+  if (extendedPalette) {
+    const pin = toPinColorId(nodeColor);
+    const others = PIN_COLOR_IDS.filter((c) => c !== pin);
+    return [others[0] ?? 'gray', others[1] ?? 'gray'];
+  }
+  const f = toFoundationPaletteId(nodeColor);
+  const others = FOUNDATION_PALETTE_IDS.filter((c) => c !== f);
+  return [others[0] ?? 'blue', others[1] ?? 'red'];
 }
 
 /**
@@ -47,55 +71,107 @@ function defaultCrossPeersForNodeColor(nodeColor: PinColorId): [PinColorId, PinC
  * third slot Input Group (`73:5651`) uses `nodeColor` on all receiving pins.
  */
 function defaultFunctionSlotsForNode(
-  nodeColor: PinColorId,
-  peerInputColors: [PinColorId, PinColorId]
+  nodeColor: GraphWireColorId,
+  peerInputColors: [GraphWireColorId, GraphWireColorId],
+  extendedPalette: boolean
 ): FunctionSlot[] {
   const [in0, in1] = peerInputColors;
   return [
-    normalizeFunctionSlot({
-      label: 'Label',
-      propertyType: TOP_LEVEL_ROW_TYPES[0]!,
-      inputPinColor: in0,
-      placeholderText: 'Placeholder',
-      textValue: null,
-      numberValues: [null, null, null],
-    }),
-    normalizeFunctionSlot({
-      label: 'Label',
-      propertyType: TOP_LEVEL_ROW_TYPES[1]!,
-      inputPinColor: in1,
-      placeholderText: 'Placeholder',
-      textValue: null,
-      numberValues: [null, null, null],
-    }),
-    normalizeFunctionSlot({
-      label: 'Inputs',
-      propertyType: 'inputGroup',
-      inputPinColor: nodeColor,
-      placeholderText: 'Placeholder',
-      textValue: null,
-      numberValues: [null, null, null],
-      inputGroupExpanded: true,
-      inputGroupChildSlots: [
-        normalizeFunctionSlot({
-          label: 'Label',
-          propertyType: 'textInput',
-          inputPinColor: nodeColor,
-          placeholderText: 'Placeholder',
-          textValue: null,
-          numberValues: [null, null, null],
-        }),
-        normalizeFunctionSlot({
-          label: 'Label',
-          propertyType: 'dropdown',
-          inputPinColor: nodeColor,
-          placeholderText: 'Placeholder',
-          textValue: null,
-          numberValues: [null, null, null],
-        }),
-      ],
-    }),
+    normalizeFunctionSlot(
+      {
+        label: 'Label',
+        propertyType: TOP_LEVEL_ROW_TYPES[0]!,
+        inputPinColor: in0,
+        placeholderText: 'Placeholder',
+        textValue: null,
+        numberValues: [null, null, null],
+      },
+      extendedPalette
+    ),
+    normalizeFunctionSlot(
+      {
+        label: 'Label',
+        propertyType: TOP_LEVEL_ROW_TYPES[1]!,
+        inputPinColor: in1,
+        placeholderText: 'Placeholder',
+        textValue: null,
+        numberValues: [null, null, null],
+      },
+      extendedPalette
+    ),
+    normalizeFunctionSlot(
+      {
+        label: 'Inputs',
+        propertyType: 'inputGroup',
+        inputPinColor: nodeColor,
+        placeholderText: 'Placeholder',
+        textValue: null,
+        numberValues: [null, null, null],
+        inputGroupExpanded: true,
+        inputGroupChildSlots: [
+          normalizeFunctionSlot(
+            {
+              label: 'Label',
+              propertyType: 'textInput',
+              inputPinColor: nodeColor,
+              placeholderText: 'Placeholder',
+              textValue: null,
+              numberValues: [null, null, null],
+            },
+            extendedPalette
+          ),
+          normalizeFunctionSlot(
+            {
+              label: 'Label',
+              propertyType: 'dropdown',
+              inputPinColor: nodeColor,
+              placeholderText: 'Placeholder',
+              textValue: null,
+              numberValues: [null, null, null],
+            },
+            extendedPalette
+          ),
+        ],
+      },
+      extendedPalette
+    ),
   ];
+}
+
+function migrateAllNodeEdgeColors(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  extendedPalette: boolean
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const mapC = (c: GraphWireColorId) => coerceGraphWireColorForPaletteMode(c, extendedPalette);
+  const nodesOut = nodes.map((n) => {
+    if (n.kind === 'parameter') return { ...n, outputPinColor: mapC(n.outputPinColor) };
+    if (n.kind === 'output') return { ...n, inputPinColor: mapC(n.inputPinColor) };
+    if (n.kind === 'generate') return n;
+    if (n.kind === 'groupInput') {
+      return {
+        ...n,
+        outputs: n.outputs.map((r) => ({ ...r, colorId: mapC(r.colorId) })),
+      };
+    }
+    if (n.kind === 'groupOutput') return { ...n, inputPinColor: mapC(n.inputPinColor) };
+    if (n.kind === 'function' || n.kind === 'group') {
+      return {
+        ...n,
+        outputPinColor: mapC(n.outputPinColor),
+        slots: n.slots.map((s) => normalizeFunctionSlot(s, extendedPalette)),
+      };
+    }
+    return n;
+  });
+  const edgesOut = edges.map((e) => {
+    const toN = nodes.find((nn) => nn.id === e.to.nodeId);
+    if (toN?.kind === 'generate') {
+      return { ...e, colorId: 'gray' as GraphWireColorId };
+    }
+    return { ...e, colorId: mapC(e.colorId) as GraphWireColorId };
+  });
+  return { nodes: nodesOut, edges: edgesOut };
 }
 
 export type GraphState = {
@@ -122,7 +198,7 @@ export type GraphState = {
   showGraphGuide: boolean;
   /**
    * When true (default), while a wire is active from an output pin, nodes with no compatible input
-   * pin color dim to 50% opacity; on nodes that have a match, non-matching input pins dim to 50%.
+   * pin color dim to 30% opacity; on nodes that have a match, non-matching input pins use the same dim.
    */
   progressiveConnections: boolean;
   /** In-memory clipboard for copy/cut/paste (induced subgraph of selected nodes). */
@@ -131,28 +207,47 @@ export type GraphState = {
   parametersEnabled: boolean;
   /** Parameters panel body visibility (Figma `132:9384` header always shown when parameters are on). */
   parameterPanelExpanded: boolean;
+  /**
+   * When true, node/pin/wire colors use the extended palette (Lima, Berry, …). When false (default),
+   * colors use Figma **DataCategorical Contrast** tokens (Blue, Berry, …) from `155:13740`.
+   */
+  extendedPalette: boolean;
+  /** Graph Settings — when true (default), inspector can switch nodes to Generate and generate UI is shown. */
+  generativeNodesEnabled: boolean;
+  /** When set, the canvas shows only that group's subgraph (Blender-style scoped edit). */
+  graphScope: string | null;
 };
 
-function defaultSlot(i: number): FunctionSlot {
-  return normalizeFunctionSlot({
-    label: 'Label',
-    propertyType: TOP_LEVEL_ROW_TYPES[i % TOP_LEVEL_ROW_TYPES.length]!,
-    inputPinColor: 'berry',
-    placeholderText: 'Placeholder',
-    textValue: null,
-    numberValues: [null, null, null],
-  });
+function defaultSlot(i: number, extendedPalette: boolean): FunctionSlot {
+  return normalizeFunctionSlot(
+    {
+      label: 'Label',
+      propertyType: TOP_LEVEL_ROW_TYPES[i % TOP_LEVEL_ROW_TYPES.length]!,
+      inputPinColor: 'berry',
+      placeholderText: 'Placeholder',
+      textValue: null,
+      numberValues: [null, null, null],
+    },
+    extendedPalette
+  );
 }
 
-function makeSlots(count: number, prev: FunctionSlot[]): FunctionSlot[] {
+function makeSlots(
+  count: number,
+  prev: FunctionSlot[],
+  extendedPalette: boolean
+): FunctionSlot[] {
   const out: FunctionSlot[] = [];
   for (let i = 0; i < count; i++) {
-    const base = prev[i] ?? defaultSlot(i);
+    const base = prev[i] ?? defaultSlot(i, extendedPalette);
     out.push(
-      normalizeFunctionSlot({
-        ...base,
-        propertyType: migrateRowPropertyType(String(base.propertyType)),
-      })
+      normalizeFunctionSlot(
+        {
+          ...base,
+          propertyType: migrateRowPropertyType(String(base.propertyType)),
+        },
+        extendedPalette
+      )
     );
   }
   return out;
@@ -179,7 +274,7 @@ const initialState: GraphState = {
       title: 'Function',
       frameVariant: 'standard',
       slotCount: 3,
-      slots: defaultFunctionSlotsForNode('berry', ['lima', 'orange']),
+      slots: defaultFunctionSlotsForNode('berry', ['rainforest', 'orange'], false),
       outputPinColor: 'berry',
       expanded: true,
     },
@@ -191,8 +286,8 @@ const initialState: GraphState = {
       title: 'Function',
       frameVariant: 'standard',
       slotCount: 3,
-      slots: defaultFunctionSlotsForNode('lima', ['berry', 'orange']),
-      outputPinColor: 'lima',
+      slots: defaultFunctionSlotsForNode('green', ['berry', 'orange'], false),
+      outputPinColor: 'green',
       expanded: true,
     },
     {
@@ -203,7 +298,7 @@ const initialState: GraphState = {
       title: 'Function',
       frameVariant: 'standard',
       slotCount: 3,
-      slots: defaultFunctionSlotsForNode('orange', ['berry', 'lima']),
+      slots: defaultFunctionSlotsForNode('orange', ['berry', 'green'], false),
       outputPinColor: 'orange',
       expanded: true,
     },
@@ -235,6 +330,9 @@ const initialState: GraphState = {
   clipboard: null,
   parametersEnabled: true,
   parameterPanelExpanded: true,
+  extendedPalette: false,
+  generativeNodesEnabled: true,
+  graphScope: null,
 };
 
 type Action =
@@ -297,13 +395,22 @@ type Action =
   | { type: 'pasteClipboard'; center: { x: number; y: number } }
   | { type: 'duplicateSelection' }
   | { type: 'deleteSelection' }
-  /** Placeholders until group/ungroup ships. */
   | { type: 'groupSelection' }
   | { type: 'ungroupSelection' }
-  /** Inspector "Node type": switch selected node between parameter and function (edges to inputs are dropped when becoming a parameter). */
-  | { type: 'setPrototypeNodeKind'; id: string; kind: 'parameter' | 'function' }
+  | {
+      type: 'updateGroup';
+      id: string;
+      patch: Partial<Pick<GroupNode, 'title' | 'frameVariant' | 'disabled'>>;
+    }
+  /** Inspector "Node type": switch selected prototype node (parameter / function / generate). */
+  | { type: 'setPrototypeNodeKind'; id: string; kind: 'parameter' | 'function' | 'generate' }
+  | { type: 'enterGroupScope'; groupId: string }
+  | { type: 'exitGroupScope' }
+  | { type: 'updateGenerate'; id: string; patch: Partial<GenerateNode> }
   | { type: 'setClickDragPinWiring'; value: boolean }
   | { type: 'setShowGraphGuide'; value: boolean }
+  /** Extended palette (Lima, Berry, …). Off = Figma DataCategorical tokens (default). */
+  | { type: 'setExtendedPalette'; value: boolean }
   | { type: 'setProgressiveConnections'; value: boolean }
   | { type: 'setPlayMode'; value: boolean }
   | { type: 'toggleGraphPlay' }
@@ -314,12 +421,13 @@ type Action =
       type: 'addFunctionNodeAt';
       graphX: number;
       graphY: number;
-      outputPinColor: PinColorId;
+      outputPinColor: GraphWireColorId;
     }
   /** Replace node at `nodeId` with a fresh function of `outputPinColor`; drops all edges on that node. */
-  | { type: 'swapNodeWithFunction'; nodeId: string; outputPinColor: PinColorId }
+  | { type: 'swapNodeWithFunction'; nodeId: string; outputPinColor: GraphWireColorId }
   | { type: 'setParametersEnabled'; value: boolean }
   | { type: 'toggleParameterPanelExpanded' }
+  | { type: 'setGenerativeNodesEnabled'; value: boolean }
   | {
       type: 'addParameter';
       graphX: number;
@@ -327,7 +435,7 @@ type Action =
       mode: 'new' | 'clone';
       cloneFromId?: string;
       /** When `mode === 'new'`, sets parameter + node pin/header color. Ignored for `clone` (uses source). */
-      outputPinColor?: PinColorId;
+      outputPinColor?: GraphWireColorId;
     };
 
 function reducer(state: GraphState, action: Action): GraphState {
@@ -388,6 +496,7 @@ function reducer(state: GraphState, action: Action): GraphState {
           typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()
             : `n-param-${Date.now()}`;
+        const defaultPin = 'berry';
         const p: ParameterNode = {
           kind: 'parameter',
           id: newId,
@@ -395,7 +504,7 @@ function reducer(state: GraphState, action: Action): GraphState {
           y: 120,
           title: 'Parameter',
           frameVariant: 'emphasis',
-          outputPinColor: 'berry',
+          outputPinColor: defaultPin,
           expanded: false,
           parameterValue: 'Value',
         };
@@ -413,7 +522,7 @@ function reducer(state: GraphState, action: Action): GraphState {
                     : `e-${Date.now()}`,
                 from: { nodeId: newId, port: 'out' },
                 to: { nodeId: 'n-fn', port: 'in-2' },
-                colorId: 'berry',
+                colorId: defaultPin,
               },
             ];
           }
@@ -423,8 +532,42 @@ function reducer(state: GraphState, action: Action): GraphState {
     }
     case 'toggleParameterPanelExpanded':
       return { ...state, parameterPanelExpanded: !state.parameterPanelExpanded };
+    case 'setGenerativeNodesEnabled': {
+      if (action.value === state.generativeNodesEnabled) return state;
+      if (!action.value) {
+        const genIds = new Set(
+          state.nodes.filter((n) => n.kind === 'generate').map((n) => n.id)
+        );
+        if (genIds.size === 0) {
+          return { ...state, generativeNodesEnabled: false };
+        }
+        const nodes = state.nodes.filter((n) => n.kind !== 'generate');
+        const edges = state.edges.filter(
+          (e) => !genIds.has(e.from.nodeId) && !genIds.has(e.to.nodeId)
+        );
+        const selectedIds = state.selectedIds.filter((id) => !genIds.has(id));
+        return {
+          ...state,
+          generativeNodesEnabled: false,
+          nodes,
+          edges,
+          selectedIds,
+        };
+      }
+      return { ...state, generativeNodesEnabled: true };
+    }
     case 'setShowGraphGuide':
       return { ...state, showGraphGuide: action.value };
+    case 'setExtendedPalette': {
+      if (action.value === state.extendedPalette) return state;
+      const migrated = migrateAllNodeEdgeColors(state.nodes, state.edges, action.value);
+      return {
+        ...state,
+        extendedPalette: action.value,
+        nodes: migrated.nodes,
+        edges: migrated.edges,
+      };
+    }
     case 'setProgressiveConnections':
       return { ...state, progressiveConnections: action.value };
     case 'setPlayMode':
@@ -435,6 +578,28 @@ function reducer(state: GraphState, action: Action): GraphState {
       };
     case 'toggleGraphPlay':
       return { ...state, graphPlayActive: !state.graphPlayActive };
+    case 'enterGroupScope': {
+      const g = state.nodes.find(
+        (n) => n.id === action.groupId && n.kind === 'group'
+      ) as GroupNode | undefined;
+      if (!g) return state;
+      const innerFirst = g.containedNodeIds.find(
+        (id) => id !== g.groupInputNodeId && id !== g.groupOutputNodeId
+      );
+      return {
+        ...state,
+        graphScope: action.groupId,
+        selectedIds: innerFirst ? [innerFirst] : [g.id],
+      };
+    }
+    case 'exitGroupScope': {
+      const gid = state.graphScope;
+      return {
+        ...state,
+        graphScope: null,
+        selectedIds: gid ? [gid] : [],
+      };
+    }
     case 'setNodeDimensions': {
       const { id, width: targetW, x: targetX } = action;
       const nodes = state.nodes.map((n) => {
@@ -447,7 +612,16 @@ function reducer(state: GraphState, action: Action): GraphState {
         if (n.kind === 'function') {
           return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
         }
+        if (n.kind === 'group') {
+          return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
+        }
         if (n.kind === 'output') {
+          return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
+        }
+        if (n.kind === 'generate') {
+          return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
+        }
+        if (n.kind === 'groupInput' || n.kind === 'groupOutput') {
           return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
         }
         return n;
@@ -460,7 +634,7 @@ function reducer(state: GraphState, action: Action): GraphState {
           ? crypto.randomUUID()
           : `n-${Date.now()}`;
       const color = action.outputPinColor;
-      const peers = defaultCrossPeersForNodeColor(color);
+      const peers = defaultCrossPeersForNodeColor(color, state.extendedPalette);
       const node: FunctionNode = {
         kind: 'function',
         id: newId,
@@ -469,7 +643,7 @@ function reducer(state: GraphState, action: Action): GraphState {
         title: 'Function',
         frameVariant: 'standard',
         slotCount: 3,
-        slots: defaultFunctionSlotsForNode(color, peers),
+        slots: defaultFunctionSlotsForNode(color, peers, state.extendedPalette),
         outputPinColor: color,
         expanded: true,
       };
@@ -487,8 +661,11 @@ function reducer(state: GraphState, action: Action): GraphState {
       const idx = state.nodes.findIndex((n) => n.id === action.nodeId);
       if (idx < 0) return state;
       const prev = state.nodes[idx]!;
+      if (prev.kind === 'group' || prev.kind === 'groupInput' || prev.kind === 'groupOutput') {
+        return state;
+      }
       const color = action.outputPinColor;
-      const peers = defaultCrossPeersForNodeColor(color);
+      const peers = defaultCrossPeersForNodeColor(color, state.extendedPalette);
       const base = {
         id: prev.id,
         x: prev.x,
@@ -503,7 +680,7 @@ function reducer(state: GraphState, action: Action): GraphState {
         kind: 'function',
         ...base,
         slotCount: 3,
-        slots: defaultFunctionSlotsForNode(color, peers),
+        slots: defaultFunctionSlotsForNode(color, peers, state.extendedPalette),
         outputPinColor: color,
       };
       const nodes = [...state.nodes];
@@ -538,10 +715,12 @@ function reducer(state: GraphState, action: Action): GraphState {
           parameterValue = cloneSrc.parameterValue ?? 'Value';
         }
       }
-      const color: PinColorId =
+      const color: GraphWireColorId =
         cloneSrc != null
           ? cloneSrc.outputPinColor
-          : (action.outputPinColor ?? firstParam?.outputPinColor ?? 'berry');
+          : (action.outputPinColor ??
+              firstParam?.outputPinColor ??
+              'berry');
       const node: ParameterNode = {
         kind: 'parameter',
         id: newId,
@@ -570,12 +749,20 @@ function reducer(state: GraphState, action: Action): GraphState {
       return { ...state, nodes };
     }
     case 'addEdge': {
-      const taken = state.edges.some(
-        (e) =>
-          e.to.nodeId === action.edge.to.nodeId && e.to.port === action.edge.to.port
-      );
+      const taken =
+        isInputConnectedWithGroupBridges(
+          state.nodes,
+          state.edges,
+          action.edge.to.nodeId,
+          action.edge.to.port
+        );
       if (taken) return state;
-      return { ...state, edges: [...state.edges, action.edge] };
+      const toN = state.nodes.find((n) => n.id === action.edge.to.nodeId);
+      const edge =
+        toN?.kind === 'generate'
+          ? { ...action.edge, colorId: 'gray' as GraphWireColorId }
+          : action.edge;
+      return { ...state, edges: [...state.edges, edge] };
     }
     case 'removeEdge':
       return { ...state, edges: state.edges.filter((e) => e.id !== action.id) };
@@ -611,6 +798,13 @@ function reducer(state: GraphState, action: Action): GraphState {
           n.kind === 'output' && n.id === action.id ? { ...n, ...action.patch } : n
         ),
       };
+    case 'updateGenerate':
+      return {
+        ...state,
+        nodes: state.nodes.map((n) =>
+          n.kind === 'generate' && n.id === action.id ? { ...n, ...action.patch } : n
+        ),
+      };
     case 'updateFunction': {
       return {
         ...state,
@@ -624,7 +818,7 @@ function reducer(state: GraphState, action: Action): GraphState {
           if (p.slotCount !== undefined) {
             const c = Math.max(1, Math.min(12, p.slotCount));
             next.slotCount = c;
-            next.slots = makeSlots(c, next.slots);
+            next.slots = makeSlots(c, next.slots, state.extendedPalette);
           }
           if (p.slots !== undefined) next.slots = p.slots;
           return next;
@@ -642,7 +836,7 @@ function reducer(state: GraphState, action: Action): GraphState {
             if (patch.propertyType !== undefined) {
               patch.propertyType = migrateRowPropertyType(String(patch.propertyType));
             }
-            return normalizeFunctionSlot({ ...s, ...patch });
+            return normalizeFunctionSlot({ ...s, ...patch }, state.extendedPalette);
           });
           return { ...n, slots };
         }),
@@ -662,9 +856,12 @@ function reducer(state: GraphState, action: Action): GraphState {
                 p.propertyType = migrateRowPropertyType(String(p.propertyType));
                 if (p.propertyType === 'inputGroup') p.propertyType = 'textInput';
               }
-              return normalizeFunctionSlot({ ...ch, ...p });
+              return normalizeFunctionSlot({ ...ch, ...p }, state.extendedPalette);
             });
-            return normalizeFunctionSlot({ ...s, inputGroupChildSlots: children });
+            return normalizeFunctionSlot(
+              { ...s, inputGroupChildSlots: children },
+              state.extendedPalette
+            );
           });
           return { ...n, slots };
         }),
@@ -684,6 +881,7 @@ function reducer(state: GraphState, action: Action): GraphState {
         ...state,
         nodes: state.nodes.map((n) => {
           if (!idSet.has(n.id)) return n;
+          if (!('disabled' in n)) return n;
           return { ...n, disabled: !n.disabled };
         }),
       };
@@ -692,7 +890,8 @@ function reducer(state: GraphState, action: Action): GraphState {
       const clip = buildClipboardFromSelection(
         state.nodes,
         state.edges,
-        state.selectedIds
+        state.selectedIds,
+        state.extendedPalette
       );
       if (!clip) return state;
       return { ...state, clipboard: clip };
@@ -701,37 +900,51 @@ function reducer(state: GraphState, action: Action): GraphState {
       const clip = buildClipboardFromSelection(
         state.nodes,
         state.edges,
-        state.selectedIds
+        state.selectedIds,
+        state.extendedPalette
       );
       if (!clip) return state;
-      const sel = new Set(state.selectedIds);
+      const { deleteIds, edges: edgesAfterRestore } = expandDeleteIdsForGroupsAndRestoreEdges(
+        state.nodes,
+        state.edges,
+        new Set(state.selectedIds)
+      );
       return {
         ...state,
         clipboard: clip,
-        nodes: state.nodes.filter((n) => !sel.has(n.id)),
-        edges: state.edges.filter(
-          (e) => !sel.has(e.from.nodeId) && !sel.has(e.to.nodeId)
+        nodes: state.nodes.filter((n) => !deleteIds.has(n.id)),
+        edges: edgesAfterRestore.filter(
+          (e) => !deleteIds.has(e.from.nodeId) && !deleteIds.has(e.to.nodeId)
         ),
         selectedIds: [],
       };
     }
     case 'deleteSelection': {
       if (state.selectedIds.length === 0) return state;
-      const sel = new Set(state.selectedIds);
+      const { deleteIds, edges: edgesAfterRestore } = expandDeleteIdsForGroupsAndRestoreEdges(
+        state.nodes,
+        state.edges,
+        new Set(state.selectedIds)
+      );
       return {
         ...state,
-        nodes: state.nodes.filter((n) => !sel.has(n.id)),
-        edges: state.edges.filter(
-          (e) => !sel.has(e.from.nodeId) && !sel.has(e.to.nodeId)
+        nodes: state.nodes.filter((n) => !deleteIds.has(n.id)),
+        edges: edgesAfterRestore.filter(
+          (e) => !deleteIds.has(e.from.nodeId) && !deleteIds.has(e.to.nodeId)
         ),
         selectedIds: [],
       };
     }
     case 'pasteClipboard': {
       if (!state.clipboard) return state;
-      const { nodes: remapped, edges: newEdges, newSelectedIds } =
-        remapClipboardPaste(state.clipboard);
-      const { cx, cy } = bboxCenterOfNodes(state.clipboard.nodes);
+      const { nodes: remapped, edges: newEdges, newSelectedIds } = remapClipboardPaste(
+        state.clipboard,
+        state.extendedPalette
+      );
+      const { cx, cy } = bboxCenterOfNodes(
+        state.clipboard.nodes,
+        state.clipboard.edges
+      );
       const dx = action.center.x - cx;
       const dy = action.center.y - cy;
       let positioned = translateNodes(remapped, dx, dy);
@@ -749,6 +962,18 @@ function reducer(state: GraphState, action: Action): GraphState {
           selectedOut = newSelectedIds.filter((id) => !paramIds.has(id));
         }
       }
+      if (!state.generativeNodesEnabled) {
+        const genIds = new Set(
+          positioned.filter((n) => n.kind === 'generate').map((n) => n.id)
+        );
+        if (genIds.size > 0) {
+          positioned = positioned.filter((n) => n.kind !== 'generate');
+          edgesOut = edgesOut.filter(
+            (e) => !genIds.has(e.from.nodeId) && !genIds.has(e.to.nodeId)
+          );
+          selectedOut = selectedOut.filter((id) => !genIds.has(id));
+        }
+      }
       return {
         ...state,
         nodes: [...state.nodes, ...positioned],
@@ -761,11 +986,14 @@ function reducer(state: GraphState, action: Action): GraphState {
       const clip = buildClipboardFromSelection(
         state.nodes,
         state.edges,
-        state.selectedIds
+        state.selectedIds,
+        state.extendedPalette
       );
       if (!clip) return state;
-      const { nodes: remapped, edges: newEdges, newSelectedIds } =
-        remapClipboardPaste(clip);
+      const { nodes: remapped, edges: newEdges, newSelectedIds } = remapClipboardPaste(
+        clip,
+        state.extendedPalette
+      );
       const OFFSET = 48;
       const positioned = translateNodes(remapped, OFFSET, OFFSET);
       return {
@@ -775,66 +1003,148 @@ function reducer(state: GraphState, action: Action): GraphState {
         selectedIds: newSelectedIds,
       };
     }
-    case 'groupSelection':
-    case 'ungroupSelection':
-      return state;
+    case 'groupSelection': {
+      if (state.graphScope) return state;
+      const next = applyGroupSelection(
+        state.nodes,
+        state.edges,
+        state.selectedIds,
+        state.extendedPalette
+      );
+      if (!next) return state;
+      return {
+        ...state,
+        nodes: next.nodes,
+        edges: next.edges,
+        selectedIds: next.selectedIds,
+      };
+    }
+    case 'ungroupSelection': {
+      if (state.graphScope) return state;
+      const next = applyUngroupSelection(state.nodes, state.edges, state.selectedIds);
+      if (!next) return state;
+      return {
+        ...state,
+        nodes: next.nodes,
+        edges: next.edges,
+        selectedIds: next.selectedIds,
+      };
+    }
+    case 'updateGroup':
+      return {
+        ...state,
+        nodes: state.nodes.map((n) =>
+          n.kind === 'group' && n.id === action.id ? { ...n, ...action.patch } : n
+        ),
+      };
     case 'setPrototypeNodeKind': {
       const { id, kind: nextKind } = action;
       if (nextKind === 'parameter' && !state.parametersEnabled) return state;
+      if (nextKind === 'generate' && !state.generativeNodesEnabled) return state;
       const idx = state.nodes.findIndex((n) => n.id === id);
       if (idx < 0) return state;
       const node = state.nodes[idx]!;
-      if (node.kind !== 'parameter' && node.kind !== 'function') return state;
+      if (node.kind === 'output') return state;
+      if (!(node.kind === 'parameter' || node.kind === 'function' || node.kind === 'generate')) {
+        return state;
+      }
       if (node.kind === nextKind) return state;
 
+      const base = {
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        title: node.title,
+        frameVariant: node.frameVariant,
+        expanded: node.expanded,
+        ...(node.width !== undefined ? { width: node.width } : {}),
+        ...(node.disabled ? { disabled: true } : {}),
+      };
+
       let replacement: GraphNode;
-      if (nextKind === 'parameter' && node.kind === 'function') {
+      if (nextKind === 'generate') {
+        const titleForGenerate =
+          (node.kind === 'function' && node.title === 'Function') ||
+          (node.kind === 'parameter' && node.title === 'Parameter')
+            ? 'Generate'
+            : node.title;
+        replacement = {
+          kind: 'generate',
+          ...base,
+          title: titleForGenerate,
+          frameVariant: 'muted',
+          generativePhase: 'prompt',
+          promptText: '',
+          inputGroupExpanded: false,
+        };
+      } else if (nextKind === 'parameter') {
         const peerParam = state.nodes.find(
           (n) => n.kind === 'parameter' && n.id !== id
         ) as ParameterNode | undefined;
-        const sharedPinColor = peerParam?.outputPinColor ?? node.outputPinColor;
+        let sharedPinColor: GraphWireColorId = 'berry';
+        if (node.kind === 'function') {
+          sharedPinColor = peerParam?.outputPinColor ?? node.outputPinColor;
+        } else if (node.kind === 'generate') {
+          const outEdge = state.edges.find((e) => e.from.nodeId === id);
+          sharedPinColor =
+            peerParam?.outputPinColor ?? outEdge?.colorId ?? 'berry';
+          sharedPinColor = coerceGraphWireColorForPaletteMode(
+            sharedPinColor,
+            state.extendedPalette
+          );
+        }
         replacement = {
           kind: 'parameter',
-          id: node.id,
-          x: node.x,
-          y: node.y,
-          title: node.title,
-          frameVariant: node.frameVariant,
+          ...base,
+          frameVariant: node.kind === 'generate' ? 'emphasis' : node.frameVariant,
           outputPinColor: sharedPinColor,
-          expanded: node.expanded,
           parameterValue: 'Value',
-          ...(node.width !== undefined ? { width: node.width } : {}),
-          ...(node.disabled ? { disabled: true } : {}),
-        };
-      } else if (nextKind === 'function' && node.kind === 'parameter') {
-        replacement = {
-          kind: 'function',
-          id: node.id,
-          x: node.x,
-          y: node.y,
-          title: node.title,
-          frameVariant: node.frameVariant,
-          outputPinColor: node.outputPinColor,
-          expanded: node.expanded,
-          slotCount: 3,
-          slots: defaultFunctionSlotsForNode(
-            node.outputPinColor,
-            defaultCrossPeersForNodeColor(node.outputPinColor)
-          ),
-          ...(node.width !== undefined ? { width: node.width } : {}),
-          ...(node.disabled ? { disabled: true } : {}),
         };
       } else {
-        return state;
+        let outColor: GraphWireColorId = 'berry';
+        if (node.kind === 'parameter') {
+          outColor = node.outputPinColor;
+        } else if (node.kind === 'generate') {
+          const outEdge = state.edges.find((e) => e.from.nodeId === id);
+          outColor = outEdge?.colorId ?? 'berry';
+          outColor = coerceGraphWireColorForPaletteMode(outColor, state.extendedPalette);
+        } else {
+          outColor = node.outputPinColor;
+        }
+        const peers = defaultCrossPeersForNodeColor(outColor, state.extendedPalette);
+        replacement = {
+          kind: 'function',
+          ...base,
+          slotCount: 3,
+          slots: defaultFunctionSlotsForNode(outColor, peers, state.extendedPalette),
+          outputPinColor: outColor,
+        };
       }
 
       const nodes = [...state.nodes];
       nodes[idx] = replacement;
 
-      const edges =
-        nextKind === 'parameter'
-          ? state.edges.filter((e) => e.to.nodeId !== id)
-          : state.edges;
+      let edges = state.edges;
+      if (nextKind === 'parameter') {
+        edges = state.edges
+          .filter((e) => e.to.nodeId !== id)
+          .map((e) => {
+            if (e.from.nodeId !== id) return e;
+            const p = replacement as ParameterNode;
+            return { ...e, colorId: p.outputPinColor };
+          });
+      } else if (nextKind === 'generate') {
+        edges = state.edges
+          .filter((e) => e.to.nodeId !== id)
+          .map((e) => (e.from.nodeId === id ? { ...e, colorId: 'gray' as GraphWireColorId } : e));
+      } else if (nextKind === 'function' && node.kind === 'generate') {
+        const fn = replacement as FunctionNode;
+        edges = state.edges
+          .filter((e) => e.to.nodeId !== id)
+          .map((e) => (e.from.nodeId === id ? { ...e, colorId: fn.outputPinColor } : e));
+      } else if (nextKind === 'function' && node.kind === 'parameter') {
+        edges = state.edges;
+      }
 
       return { ...state, nodes, edges };
     }
@@ -873,4 +1183,4 @@ export function useConnectEdge() {
   return useGraph().connectEdge;
 }
 
-export type { PinColorId } from './pinColors';
+export type { GraphWireColorId, PinColorId } from './pinColors';

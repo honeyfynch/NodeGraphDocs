@@ -1,4 +1,5 @@
-import type { PinColorId } from './pinColors';
+import { FOUNDATION_PALETTE_LABEL } from './foundationPalette';
+import { FOUNDATION_PALETTE_IDS, type GraphWireColorId } from './pinColors';
 
 /**
  * Figma `145:32069` Create Parameter Sub-Menu — `.MenuSectionTitle` copy (exact casing).
@@ -12,7 +13,7 @@ export const GRAPH_NEW_PARAMETER_MENU_SECTION_TITLE = 'New parameter';
  */
 export const GRAPH_INSERT_NODE_SUBMENU_ROWS: readonly {
   label: string;
-  colorId: PinColorId;
+  colorId: GraphWireColorId;
 }[] = [
   { label: 'Gray', colorId: 'gray' },
   { label: 'Red', colorId: 'red' },
@@ -27,6 +28,17 @@ export const GRAPH_INSERT_NODE_SUBMENU_ROWS: readonly {
   { label: 'Magenta', colorId: 'magenta' },
   { label: 'Berry', colorId: 'berry' },
 ];
+
+/** Insert / new-parameter flyout rows for the current palette mode (Inspector → Extended palette). */
+export function graphInsertNodeSubmenuRows(
+  extendedPalette: boolean
+): readonly { label: string; colorId: GraphWireColorId }[] {
+  if (extendedPalette) return GRAPH_INSERT_NODE_SUBMENU_ROWS;
+  return FOUNDATION_PALETTE_IDS.map((id) => ({
+    label: FOUNDATION_PALETTE_LABEL[id],
+    colorId: id,
+  }));
+}
 
 /** Figma `139:47052` Node Sub-Menu frame width (matches graph context menu). */
 export const GRAPH_INSERT_NODE_SUBMENU_W = 260;

@@ -1,4 +1,5 @@
-import type { PinColorId } from './pinColors';
+import type { GraphWireColorId } from './pinColors';
+import { normalizeInputPinColor } from './pinColors';
 
 export type FrameVariant = 'standard' | 'emphasis' | 'muted';
 
@@ -77,7 +78,7 @@ export function migrateRowPropertyType(raw: string): RowPropertyType {
 export type FunctionSlot = {
   label: string;
   propertyType: RowPropertyType;
-  inputPinColor: PinColorId;
+  inputPinColor: GraphWireColorId;
   /** When `propertyType === 'inputGroup'`: expand/collapse child rows (Figma `73:5652` toggle). */
   inputGroupExpanded?: boolean;
   /** Nested property rows; `inputPinColor` on children is ignored — use parent slot color for pins. */
@@ -96,8 +97,14 @@ export type FunctionSlot = {
   numberValues: [string | null, string | null, string | null];
 };
 
-/** Merge partial slot updates and apply defaults for older persisted graph data. */
-export function normalizeFunctionSlot(s: FunctionSlot): FunctionSlot {
+/**
+ * Merge partial slot updates and apply defaults for older persisted graph data.
+ * `extendedPalette` must match {@link GraphState.extendedPalette} so stored colors coerce correctly.
+ */
+export function normalizeFunctionSlot(
+  s: FunctionSlot,
+  extendedPalette: boolean = false
+): FunctionSlot {
   const num = s.numberValues;
   const numberValues: [string | null, string | null, string | null] =
     Array.isArray(num) && num.length === 3
@@ -110,31 +117,38 @@ export function normalizeFunctionSlot(s: FunctionSlot): FunctionSlot {
     placeholderText: s.placeholderText ?? 'Placeholder',
     textValue,
     numberValues,
+    inputPinColor: normalizeInputPinColor(s.inputPinColor, extendedPalette),
   };
   if (base.propertyType === 'inputGroup') {
     const rawChildren = base.inputGroupChildSlots;
     let children =
       Array.isArray(rawChildren) && rawChildren.length > 0
         ? rawChildren.map((c) =>
-            normalizeFunctionSlot({
-              ...c,
-              propertyType:
-                c.propertyType === 'inputGroup' ? 'textInput' : c.propertyType,
-            })
+            normalizeFunctionSlot(
+              {
+                ...c,
+                propertyType:
+                  c.propertyType === 'inputGroup' ? 'textInput' : c.propertyType,
+              },
+              extendedPalette
+            )
           )
         : [];
     if (children.length === 0) {
       children = [0, 1].map((i) =>
-        normalizeFunctionSlot({
-          label: 'Label',
-          propertyType: ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD[
-            i % ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD.length
-          ]!,
-          inputPinColor: base.inputPinColor,
-          placeholderText: 'Placeholder',
-          textValue: null,
-          numberValues: [null, null, null],
-        })
+        normalizeFunctionSlot(
+          {
+            label: 'Label',
+            propertyType: ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD[
+              i % ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD.length
+            ]!,
+            inputPinColor: base.inputPinColor,
+            placeholderText: 'Placeholder',
+            textValue: null,
+            numberValues: [null, null, null],
+          },
+          extendedPalette
+        )
       );
     }
     return {
@@ -161,7 +175,7 @@ export type ParameterNode = {
   y: number;
   title: string;
   frameVariant: FrameVariant;
-  outputPinColor: PinColorId;
+  outputPinColor: GraphWireColorId;
   /** When false, only the header row is shown (Figma collapse). */
   expanded: boolean;
   /**
@@ -187,7 +201,7 @@ export type FunctionNode = {
   frameVariant: FrameVariant;
   slotCount: number;
   slots: FunctionSlot[];
-  outputPinColor: PinColorId;
+  outputPinColor: GraphWireColorId;
   expanded: boolean;
   /** See `ParameterNode.disabled`. */
   disabled?: boolean;
@@ -202,7 +216,7 @@ export type OutputNode = {
   y: number;
   title: string;
   frameVariant: FrameVariant;
-  inputPinColor: PinColorId;
+  inputPinColor: GraphWireColorId;
   expanded: boolean;
   /** See `ParameterNode.disabled` (output has no outgoing edges; dimming still applies). */
   disabled?: boolean;
@@ -210,14 +224,131 @@ export type OutputNode = {
   width?: number;
 };
 
-export type GraphNode = ParameterNode | FunctionNode | OutputNode;
+/** Generative node — pins are always gray (`gray`); header uses neutral gray chrome (Figma `163:45377` / `163:47444`). */
+export type GenerateNode = {
+  kind: 'generate';
+  id: string;
+  x: number;
+  y: number;
+  title: string;
+  /** Unused for palette; header is always neutral gray in the canvas. */
+  frameVariant: FrameVariant;
+  expanded: boolean;
+  disabled?: boolean;
+  width?: number;
+  /** `prompt`: textarea + inputs + Run. `output`: preview strip + same body. */
+  generativePhase: 'prompt' | 'output';
+  /** Multiline prompt (prompt phase body). */
+  promptText: string;
+  /** Input group “Inputs” section — body rows (wired + Add input…) only when expanded. */
+  inputGroupExpanded: boolean;
+};
 
-export type EdgePortOut = { nodeId: string; port: 'out' };
+/** Source pin on an edge — header `out`, or numbered `out-n` on {@link GroupInputNode}. */
+export type GraphOutPort = 'out' | `out-${number}`;
+
+export function isGraphOutPort(p: string): p is GraphOutPort {
+  return p === 'out' || /^out-\d+$/.test(p);
+}
+
+/**
+ * Restores external→inner wiring when a {@link GroupNode} is removed (`graphGroupOps`).
+ */
+export type GroupBridge = {
+  groupPortIndex: number;
+  innerNodeId: string;
+  innerPort: `in-${number}`;
+  externalFromNodeId: string;
+  externalFromPort: GraphOutPort;
+  colorId: GraphWireColorId;
+};
+
+/** When the group exposes a value to the parent graph (inner → outside). */
+export type GroupExitBridge = {
+  innerFromNodeId: string;
+  innerFromPort: GraphOutPort;
+  externalToNodeId: string;
+  externalToPort: `in-${number}`;
+  colorId: GraphWireColorId;
+};
+
+/**
+ * Blender-style **Group Input** — lives inside the group subgraph; each row is an output pin
+ * feeding inner nodes that receive parent-graph wires on the {@link GroupNode} shell.
+ */
+export type GroupInputNode = {
+  kind: 'groupInput';
+  id: string;
+  x: number;
+  y: number;
+  parentGroupId: string;
+  title: string;
+  frameVariant: FrameVariant;
+  expanded: boolean;
+  disabled?: boolean;
+  width?: number;
+  /** One row per {@link GroupNode.bridges} entry (same order). */
+  outputs: { label: string; colorId: GraphWireColorId }[];
+};
+
+/**
+ * Blender-style **Group Output** — single input row receiving the exit connection that maps to
+ * the group node’s header output on the parent graph.
+ */
+export type GroupOutputNode = {
+  kind: 'groupOutput';
+  id: string;
+  x: number;
+  y: number;
+  parentGroupId: string;
+  title: string;
+  frameVariant: FrameVariant;
+  expanded: boolean;
+  disabled?: boolean;
+  width?: number;
+  inputPinColor: GraphWireColorId;
+  rowLabel: string;
+};
+
+/**
+ * Subgraph wrapper from **Group selection** / ⌘G — renders like a function node; body uses
+ * read-only rows mirroring bridged external inputs (not swappable in the inspector).
+ */
+export type GroupNode = {
+  kind: 'group';
+  id: string;
+  x: number;
+  y: number;
+  title: string;
+  frameVariant: FrameVariant;
+  expanded: boolean;
+  disabled?: boolean;
+  width?: number;
+  slotCount: number;
+  slots: FunctionSlot[];
+  outputPinColor: GraphWireColorId;
+  containedNodeIds: string[];
+  bridges: GroupBridge[];
+  groupInputNodeId: string;
+  groupOutputNodeId: string;
+  exitBridge: GroupExitBridge | null;
+};
+
+export type GraphNode =
+  | ParameterNode
+  | FunctionNode
+  | OutputNode
+  | GenerateNode
+  | GroupNode
+  | GroupInputNode
+  | GroupOutputNode;
+
+export type EdgePortOut = { nodeId: string; port: GraphOutPort };
 export type EdgePortIn = { nodeId: string; port: `in-${number}` };
 
 export type GraphEdge = {
   id: string;
   from: EdgePortOut;
   to: EdgePortIn;
-  colorId: PinColorId;
+  colorId: GraphWireColorId;
 };

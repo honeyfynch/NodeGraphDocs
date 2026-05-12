@@ -1,12 +1,20 @@
 /**
- * Socket / noodle colors — aligned to Figma **Node Pin** component (`73:5524`),
- * file `VxWer5hEenmn5M05lRWrCx`. Hex values from Figma Desktop MCP `get_variable_defs` on that node
- * (palette `*_800`, gray `Gray_700`). Idle pin rendering uses `--studio-surface-0` fill in
- * {@link Pin} (same as `--studio-canvas`) plus a 1px outer ring in that color.
+ * Graph wire / pin / header colors — two modes (Inspector → Experimental → **Extended Palette**):
  *
- * Variant names match Figma prop `color`: Gray, Green, Magenta, Lima, Berry, Orange,
- * Blue, Purple, Ice, Red, Yellow, Rainforest.
+ * - **Off (default):** Figma **DataCategorical Contrast** tokens from Node-Graph-Draft `155:13740`
+ *   — e.g. Blue, Berry, Rainforest. One hex per token for header, pin, and wire (`FOUNDATION_PALETTE_HEX`).
+ * - **On:** Legacy extended palette (Lima, Berry, …) with separate socket (`PIN_HEX`) and header
+ *   (`NODE_HEADER_HEX`) ramps — Figma Node Pin `73:5524` / shell `73:5757`.
  */
+
+import {
+  FOUNDATION_PALETTE_HEX,
+  FOUNDATION_PALETTE_IDS,
+  FOUNDATION_PALETTE_LABEL,
+  type FoundationPaletteId,
+  isFoundationPaletteId,
+  migrateLegacyFoundationTintId,
+} from './foundationPalette';
 
 export const PIN_COLOR_IDS = [
   'gray',
@@ -24,6 +32,45 @@ export const PIN_COLOR_IDS = [
 ] as const;
 
 export type PinColorId = (typeof PIN_COLOR_IDS)[number];
+
+export type GraphWireColorId = PinColorId | FoundationPaletteId;
+
+/** Re-export for menus / inspector when Extended Palette is off. */
+export { FOUNDATION_PALETTE_IDS, FOUNDATION_PALETTE_LABEL, type FoundationPaletteId };
+
+/** Extended `PinColorId` → default foundation token (used when turning Extended Palette off). */
+const PIN_TO_FOUNDATION: Record<PinColorId, FoundationPaletteId> = {
+  gray: 'ice',
+  green: 'green',
+  magenta: 'purple',
+  lima: 'green',
+  berry: 'berry',
+  orange: 'orange',
+  blue: 'blue',
+  purple: 'purple',
+  ice: 'ice',
+  red: 'red',
+  yellow: 'orange',
+  rainforest: 'rainforest',
+};
+
+/** Foundation token → closest extended pin id (used when turning Extended Palette on). */
+const FOUNDATION_TO_PIN: Record<FoundationPaletteId, PinColorId> = {
+  blue: 'blue',
+  berry: 'berry',
+  green: 'green',
+  ice: 'ice',
+  orange: 'orange',
+  purple: 'purple',
+  rainforest: 'rainforest',
+  red: 'red',
+};
+
+/**
+ * Generate universal socket / gray wire stroke in **foundation** palette mode — Figma
+ * `Gray/Gray_900` (`get_variable_defs` on `163:45377`). Matches other node pins’ ring hue.
+ */
+export const GENERATE_UNIVERSAL_SOCKET_HEX = '#BCBEC8';
 
 /** Exact hex from Figma variables (Node Pin `73:5524`, `get_variable_defs`). */
 export const PIN_HEX: Record<PinColorId, string> = {
@@ -82,7 +129,7 @@ export function formatPinColorOption(id: PinColorId): string {
   return PIN_FIGMA_NAMES[id];
 }
 
-/** Node color row — Figma palette name only (header + pin colors still follow `NODE_HEADER_HEX` / `PIN_HEX`). */
+/** Node color row — extended palette name only. */
 export function formatNodeColorOption(id: PinColorId): string {
   return PIN_FIGMA_NAMES[id];
 }
@@ -91,6 +138,86 @@ export function parsePinColorId(raw: string): PinColorId | null {
   const k = raw.trim().toLowerCase();
   if ((PIN_COLOR_IDS as readonly string[]).includes(k)) return k as PinColorId;
   return null;
+}
+
+export function parseGraphWireColorId(raw: string): GraphWireColorId | null {
+  const pin = parsePinColorId(raw);
+  if (pin) return pin;
+  const t = raw.trim();
+  const fromTint = migrateLegacyFoundationTintId(t);
+  if (fromTint) return fromTint;
+  if (isFoundationPaletteId(t)) return t;
+  return null;
+}
+
+export function toPinColorId(id: GraphWireColorId): PinColorId {
+  const s = String(id);
+  const legacyBase = migrateLegacyFoundationTintId(s);
+  if (legacyBase) return FOUNDATION_TO_PIN[legacyBase];
+  if (isFoundationPaletteId(s)) return FOUNDATION_TO_PIN[s];
+  return parsePinColorId(s) ?? migrateLegacyPinColorId(s);
+}
+
+export function toFoundationPaletteId(id: GraphWireColorId): FoundationPaletteId {
+  const s = String(id);
+  const legacyBase = migrateLegacyFoundationTintId(s);
+  if (legacyBase) return legacyBase;
+  if (isFoundationPaletteId(s)) return s;
+  return PIN_TO_FOUNDATION[parsePinColorId(s) ?? migrateLegacyPinColorId(s)];
+}
+
+/** Coerce any stored id to the active palette mode (call when toggling Extended Palette). */
+export function coerceGraphWireColorForPaletteMode(
+  id: GraphWireColorId,
+  extendedPalette: boolean
+): GraphWireColorId {
+  return extendedPalette ? toPinColorId(id) : toFoundationPaletteId(id);
+}
+
+/** Normalize slot / patch `inputPinColor` for the current palette mode. */
+export function normalizeInputPinColor(
+  raw: unknown,
+  extendedPalette: boolean
+): GraphWireColorId {
+  const s = String(raw ?? '');
+  const dual = parseGraphWireColorId(s);
+  if (dual != null) {
+    return coerceGraphWireColorForPaletteMode(dual, extendedPalette);
+  }
+  const leg = migrateLegacyPinColorId(s);
+  return extendedPalette ? leg : PIN_TO_FOUNDATION[leg];
+}
+
+export function resolveGraphPinHex(id: GraphWireColorId, extendedPalette: boolean): string {
+  /**
+   * `gray` wires / universal sockets — Figma `Gray/Gray_900` `#BCBEC8` (`163:45377` variable defs),
+   * same ring treatment as other graph pins (2px stroke), not categorical `ice` / extended `#6a6f81`.
+   */
+  if (toPinColorId(id) === 'gray') {
+    return GENERATE_UNIVERSAL_SOCKET_HEX;
+  }
+  if (extendedPalette) {
+    return PIN_HEX[toPinColorId(id)];
+  }
+  return FOUNDATION_PALETTE_HEX[toFoundationPaletteId(id)];
+}
+
+export function resolveGraphHeaderHex(id: GraphWireColorId, extendedPalette: boolean): string {
+  if (extendedPalette) {
+    return NODE_HEADER_HEX[toPinColorId(id)];
+  }
+  return FOUNDATION_PALETTE_HEX[toFoundationPaletteId(id)];
+}
+
+export function formatGraphWireColorOption(
+  id: GraphWireColorId,
+  extendedPalette: boolean
+): string {
+  if (extendedPalette) {
+    return formatPinColorOption(toPinColorId(id));
+  }
+  const f = toFoundationPaletteId(id);
+  return FOUNDATION_PALETTE_LABEL[f];
 }
 
 /**

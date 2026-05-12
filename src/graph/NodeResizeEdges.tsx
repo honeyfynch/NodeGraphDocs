@@ -1,9 +1,17 @@
 import type { CSSProperties, PointerEvent } from 'react';
-import type { GraphNode } from './types';
-import { HEADER_H, PARAMETER_CHIP_H, ROW_H, nodeHeight } from './geometry';
+import type { GraphEdge, GraphNode } from './types';
+import {
+  HEADER_H,
+  NODE_CARD_BORDER,
+  PARAMETER_CHIP_H,
+  ROW_H,
+  nodeHeight,
+} from './geometry';
 
 type Props = {
   node: GraphNode;
+  /** Required for {@link GraphNode} `generate` height (input row count from edges). */
+  edges?: readonly GraphEdge[];
   onEdgePointerDown: (edge: 'left' | 'right', e: PointerEvent<HTMLDivElement>) => void;
 };
 
@@ -36,12 +44,21 @@ function bindEdge(
  * Horizontal resize targets along the node outline, excluding the header row and pin sockets
  * (function/output: body left/right only; parameter: chip edges with gaps around the output pin).
  */
-export function NodeResizeEdges({ node, onEdgePointerDown }: Props) {
-  const h = nodeHeight(node);
+export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) {
+  const h = nodeHeight(node, edges);
 
-  if (node.kind === 'function' || node.kind === 'output') {
+  if (
+    node.kind === 'function' ||
+    node.kind === 'output' ||
+    node.kind === 'generate' ||
+    node.kind === 'group' ||
+    node.kind === 'groupInput' ||
+    node.kind === 'groupOutput'
+  ) {
     const bodyH = h - HEADER_H;
     if (bodyH <= 0) return null;
+    /** Body starts after card top border + header (`pinGraphPosition` / NodeShell). */
+    const bodyTop = NODE_CARD_BORDER + HEADER_H;
 
     return (
       <>
@@ -50,7 +67,7 @@ export function NodeResizeEdges({ node, onEdgePointerDown }: Props) {
           style={{
             ...zoneBase,
             left: -(OUTSET + ZONE),
-            top: HEADER_H,
+            top: bodyTop,
             width: ZONE,
             height: bodyH,
           }}
@@ -61,7 +78,7 @@ export function NodeResizeEdges({ node, onEdgePointerDown }: Props) {
           style={{
             ...zoneBase,
             right: -(OUTSET + ZONE),
-            top: HEADER_H,
+            top: bodyTop,
             width: ZONE,
             height: bodyH,
           }}

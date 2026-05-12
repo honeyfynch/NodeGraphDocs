@@ -6,9 +6,9 @@ import { NodePropertyFieldShell } from '../foundation/NodePropertyFieldShell';
 import { TextInput } from '../foundation/TextInput';
 import {
   PIN_COLOR_IDS,
-  formatNodeColorOption,
-  formatPinColorOption,
-  type PinColorId,
+  FOUNDATION_PALETTE_IDS,
+  formatGraphWireColorOption,
+  type GraphWireColorId,
 } from './pinColors';
 import {
   findIncomingParameterSource,
@@ -34,6 +34,7 @@ export function InspectorPanel() {
       ? state.selectedIds[state.selectedIds.length - 1]!
       : null;
   const node = sel ? state.nodes.find((n) => n.id === sel) : null;
+  const wireColorIds = state.extendedPalette ? PIN_COLOR_IDS : FOUNDATION_PALETTE_IDS;
 
   const edgesHere = state.edges.filter(
     (e) =>
@@ -55,6 +56,7 @@ export function InspectorPanel() {
         <NodePropertyFieldShell>
           <Checkbox
             label="Play mode"
+            hint="Graph can trigger a runtime mode"
             checked={state.playMode}
             onCheckedChange={(value) => dispatch({ type: 'setPlayMode', value })}
           />
@@ -62,9 +64,20 @@ export function InspectorPanel() {
         <NodePropertyFieldShell>
           <Checkbox
             label="Parameters"
+            hint="Graph integrates parameters"
             checked={state.parametersEnabled}
             onCheckedChange={(value) =>
               dispatch({ type: 'setParametersEnabled', value })
+            }
+          />
+        </NodePropertyFieldShell>
+        <NodePropertyFieldShell>
+          <Checkbox
+            label="Generative Nodes"
+            hint="Graph integrates generative nodes."
+            checked={state.generativeNodesEnabled}
+            onCheckedChange={(value) =>
+              dispatch({ type: 'setGenerativeNodesEnabled', value })
             }
           />
         </NodePropertyFieldShell>
@@ -86,12 +99,15 @@ export function InspectorPanel() {
                 dispatch({
                   type: 'setPrototypeNodeKind',
                   id: node.id,
-                  kind: v as 'parameter' | 'function',
+                  kind: v as 'parameter' | 'function' | 'generate',
                 })
               }
             >
               <DropdownItem value="parameter">Parameter</DropdownItem>
               <DropdownItem value="function">Function</DropdownItem>
+              {state.generativeNodesEnabled ? (
+                <DropdownItem value="generate">Generate</DropdownItem>
+              ) : null}
             </Dropdown>
           </Field>
           <Field label="Title">
@@ -127,13 +143,13 @@ export function InspectorPanel() {
                 dispatch({
                   type: 'updateParameter',
                   id: node.id,
-                  patch: { outputPinColor: v as PinColorId },
+                  patch: { outputPinColor: v as GraphWireColorId },
                 })
               }
             >
-              {PIN_COLOR_IDS.map((id) => (
+              {wireColorIds.map((id) => (
                 <DropdownItem key={id} value={id}>
-                  {formatNodeColorOption(id)}
+                  {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                 </DropdownItem>
               ))}
             </Dropdown>
@@ -165,7 +181,7 @@ export function InspectorPanel() {
                 dispatch({
                   type: 'setPrototypeNodeKind',
                   id: node.id,
-                  kind: v as 'parameter' | 'function',
+                  kind: v as 'parameter' | 'function' | 'generate',
                 })
               }
             >
@@ -173,6 +189,9 @@ export function InspectorPanel() {
                 <DropdownItem value="parameter">Parameter</DropdownItem>
               ) : null}
               <DropdownItem value="function">Function</DropdownItem>
+              {state.generativeNodesEnabled ? (
+                <DropdownItem value="generate">Generate</DropdownItem>
+              ) : null}
             </Dropdown>
           </Field>
           <Field label="Title">
@@ -212,13 +231,13 @@ export function InspectorPanel() {
                 dispatch({
                   type: 'updateFunction',
                   id: node.id,
-                  patch: { outputPinColor: v as PinColorId },
+                  patch: { outputPinColor: v as GraphWireColorId },
                 })
               }
             >
-              {PIN_COLOR_IDS.map((id) => (
+              {wireColorIds.map((id) => (
                 <DropdownItem key={id} value={id}>
-                  {formatNodeColorOption(id)}
+                  {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                 </DropdownItem>
               ))}
             </Dropdown>
@@ -270,8 +289,8 @@ export function InspectorPanel() {
                       for (let j = 0; j < c; j++) {
                         next.push(
                           normalizeFunctionSlot(
-                            prev[j] ??
-                              inspectorDefaultChildSlot(j, pin)
+                            prev[j] ?? inspectorDefaultChildSlot(j, pin, state.extendedPalette),
+                            state.extendedPalette
                           )
                         );
                       }
@@ -293,13 +312,13 @@ export function InspectorPanel() {
                         type: 'updateFunctionSlot',
                         id: node.id,
                         slotIndex: i,
-                        patch: { inputPinColor: v as PinColorId },
+                        patch: { inputPinColor: v as GraphWireColorId },
                       })
                     }
                   >
-                    {PIN_COLOR_IDS.map((id) => (
+                    {wireColorIds.map((id) => (
                       <DropdownItem key={id} value={id}>
-                        {formatPinColorOption(id)}
+                        {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                       </DropdownItem>
                     ))}
                   </Dropdown>
@@ -483,13 +502,13 @@ export function InspectorPanel() {
                         type: 'updateFunctionSlot',
                         id: node.id,
                         slotIndex: i,
-                        patch: { inputPinColor: v as PinColorId },
+                        patch: { inputPinColor: v as GraphWireColorId },
                       })
                     }
                   >
-                    {PIN_COLOR_IDS.map((id) => (
+                    {wireColorIds.map((id) => (
                       <DropdownItem key={id} value={id}>
-                        {formatPinColorOption(id)}
+                        {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                       </DropdownItem>
                     ))}
                   </Dropdown>
@@ -497,6 +516,147 @@ export function InspectorPanel() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {node?.kind === 'group' && (
+        <div className="flex-col gap-md">
+          <div className="text-sm text-muted">
+            Group wraps a subgraph on the canvas. It is not interchangeable with Parameter / Function /
+            Generate in the inspector.
+          </div>
+          <Field label="Title">
+            <TextInput
+              variant="nodeProperty"
+              value={node.title}
+              onChange={(e) =>
+                dispatch({
+                  type: 'updateGroup',
+                  id: node.id,
+                  patch: { title: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <Field label="External inputs (read-only)">
+            {node.bridges.length === 0 ? (
+              <div className="text-sm text-muted">No edges from outside the group into the selection.</div>
+            ) : (
+              <ul className="text-sm text-muted m-0 pl-md flex-col gap-xs list-disc">
+                {node.bridges.map((b) => {
+                  const inner = state.nodes.find((n) => n.id === b.innerNodeId);
+                  const rowLabel = node.slots[b.groupPortIndex]?.label ?? `in-${b.groupPortIndex}`;
+                  return (
+                    <li key={`${b.innerNodeId}-${b.innerPort}`}>
+                      {rowLabel} → {inner?.title ?? b.innerNodeId} · {b.innerPort}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Field>
+        </div>
+      )}
+
+      {(node?.kind === 'groupInput' || node?.kind === 'groupOutput') && (
+        <div className="text-sm text-muted">
+          {node.kind === 'groupInput' ? 'Group Input' : 'Group Output'} is a subgraph boundary. Double-click
+          this node (or press Esc) while inside a group to return to the parent graph.
+        </div>
+      )}
+
+      {node?.kind === 'generate' && (
+        <div className="flex-col gap-md">
+          <Field label="Node type">
+            <Dropdown
+              variant="nodeProperty"
+              value="generate"
+              onChange={(v) =>
+                dispatch({
+                  type: 'setPrototypeNodeKind',
+                  id: node.id,
+                  kind: v as 'parameter' | 'function' | 'generate',
+                })
+              }
+            >
+              {state.parametersEnabled ? (
+                <DropdownItem value="parameter">Parameter</DropdownItem>
+              ) : null}
+              <DropdownItem value="function">Function</DropdownItem>
+              <DropdownItem value="generate">Generate</DropdownItem>
+            </Dropdown>
+          </Field>
+          <Field label="Title">
+            <TextInput
+              variant="nodeProperty"
+              value={node.title}
+              onChange={(e) =>
+                dispatch({
+                  type: 'updateGenerate',
+                  id: node.id,
+                  patch: { title: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <Field label="Phase">
+            <Dropdown
+              variant="nodeProperty"
+              value={node.generativePhase}
+              onChange={(v) =>
+                dispatch({
+                  type: 'updateGenerate',
+                  id: node.id,
+                  patch: { generativePhase: v as 'prompt' | 'output' },
+                })
+              }
+            >
+              <DropdownItem value="prompt">Prompt</DropdownItem>
+              <DropdownItem value="output">Output</DropdownItem>
+            </Dropdown>
+          </Field>
+          <Field label="Prompt text">
+            <textarea
+              className="w-full rounded border-studio bg-surface-100 text-sm p-sm outline-none"
+              style={{ minHeight: 80, resize: 'vertical' }}
+              value={node.promptText}
+              onChange={(e) =>
+                dispatch({
+                  type: 'updateGenerate',
+                  id: node.id,
+                  patch: { promptText: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <NodePropertyFieldShell>
+            <Checkbox
+              label="Inputs section expanded"
+              hint="When expanded, the node shows the Inputs group rows on the canvas."
+              checked={node.inputGroupExpanded}
+              onCheckedChange={(inputGroupExpanded) =>
+                dispatch({
+                  type: 'updateGenerate',
+                  id: node.id,
+                  patch: { inputGroupExpanded },
+                })
+              }
+            />
+          </NodePropertyFieldShell>
+          <NodePropertyFieldShell>
+            <Checkbox
+              label="Body expanded"
+              hint="When collapsed, only the node header is shown."
+              checked={node.expanded}
+              onCheckedChange={(expanded) =>
+                dispatch({
+                  type: 'updateGenerate',
+                  id: node.id,
+                  patch: { expanded },
+                })
+              }
+            />
+          </NodePropertyFieldShell>
         </div>
       )}
 
@@ -541,13 +701,13 @@ export function InspectorPanel() {
                 dispatch({
                   type: 'updateOutput',
                   id: node.id,
-                  patch: { inputPinColor: v as PinColorId },
+                  patch: { inputPinColor: v as GraphWireColorId },
                 })
               }
             >
-              {PIN_COLOR_IDS.map((id) => (
+              {wireColorIds.map((id) => (
                 <DropdownItem key={id} value={id}>
-                  {formatNodeColorOption(id)}
+                  {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                 </DropdownItem>
               ))}
             </Dropdown>
@@ -611,6 +771,16 @@ export function InspectorPanel() {
             }
           />
         </NodePropertyFieldShell>
+        <NodePropertyFieldShell>
+          <Checkbox
+            label="Extended palette"
+            hint="Lima, Berry, Yellow, … When off, node colors use Figma Data categorical contrast tokens (Blue, Berry, Rainforest, …)."
+            checked={state.extendedPalette}
+            onCheckedChange={(value) =>
+              dispatch({ type: 'setExtendedPalette', value })
+            }
+          />
+        </NodePropertyFieldShell>
       </div>
     </aside>
   );
@@ -625,16 +795,23 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function inspectorDefaultChildSlot(index: number, inputPinColor: PinColorId): FunctionSlot {
-  return normalizeFunctionSlot({
-    label: 'Label',
-    propertyType:
-      ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD[
-        index % ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD.length
-      ]!,
-    inputPinColor,
-    placeholderText: 'Placeholder',
-    textValue: null,
-    numberValues: [null, null, null],
-  });
+function inspectorDefaultChildSlot(
+  index: number,
+  inputPinColor: GraphWireColorId,
+  extendedPalette: boolean
+): FunctionSlot {
+  return normalizeFunctionSlot(
+    {
+      label: 'Label',
+      propertyType:
+        ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD[
+          index % ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD.length
+        ]!,
+      inputPinColor,
+      placeholderText: 'Placeholder',
+      textValue: null,
+      numberValues: [null, null, null],
+    },
+    extendedPalette
+  );
 }

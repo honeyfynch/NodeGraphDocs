@@ -1,49 +1,50 @@
-import { useGraph } from '../GraphContext';
-import { findIncomingParameterSource, parameterDisplayValue } from '../graphWiring';
-import type { OutputNode } from '../types';
 import {
   graphNodeWidth,
   nodeHeight,
   ROW_H,
   NODE_ROW_PIN_CENTER_Y_OFFSET,
 } from '../geometry';
+import type { GroupOutputNode } from '../types';
+import { useGraph } from '../GraphContext';
 import { resolveGraphHeaderHex } from '../pinColors';
+import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodeShell } from '../NodeShell';
 import { NodeResizeEdges } from '../NodeResizeEdges';
 import { Pin } from '../Pin';
+import { nodeLabelColumn, nodeRow } from '../figmaNodeTokens';
 
 type Props = {
-  node: OutputNode;
+  node: GroupOutputNode;
   selected: boolean;
-  /** Experimental progressive connections (default 1). */
   progressiveCardOpacity?: number;
   inputConnected: boolean;
   onSelect: (e: React.PointerEvent) => void;
-  onToggleExpand: () => void;
+  onTitleDragStart: (start: { clientX: number; clientY: number }) => void;
   onHeaderDragPointerDown: (e: React.PointerEvent) => void;
   onInputPointerDown: (e: React.PointerEvent) => void;
   onInputPointerUp: (e: React.PointerEvent) => void;
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
+  onExitSubgraph?: () => void;
 };
 
-export function OutputNodeView({
+export function GroupOutputNodeView({
   node,
   selected,
   progressiveCardOpacity = 1,
   inputConnected,
   onSelect,
-  onToggleExpand,
+  onTitleDragStart,
   onHeaderDragPointerDown,
   onInputPointerDown,
   onInputPointerUp,
   onResizeEdgePointerDown,
   onNodeContextMenu,
+  onExitSubgraph,
 }: Props) {
-  const { state } = useGraph();
+  const { state: graphState } = useGraph();
   const w = graphNodeWidth(node);
   const h = nodeHeight(node);
-  const paramIn = findIncomingParameterSource(state.nodes, state.edges, node.id, 'in-0');
 
   return (
     <div
@@ -55,36 +56,41 @@ export function OutputNodeView({
         zIndex: selected ? 4 : 1,
         opacity: progressiveCardOpacity,
       }}
-      onContextMenu={(e) => {
-        onNodeContextMenu?.(e);
+      onContextMenu={(e) => onNodeContextMenu?.(e)}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onExitSubgraph?.();
       }}
     >
-      <div style={{ position: 'relative', minHeight: h }}>
+      <div style={{ position: 'relative', zIndex: 1, minHeight: h }}>
         {onResizeEdgePointerDown ? (
           <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
         ) : null}
-      <NodeShell
-        title={node.title}
-        frameVariant={node.frameVariant}
-        headerFillOverride={resolveGraphHeaderHex(node.inputPinColor, state.extendedPalette)}
-        selected={selected}
-        width={w}
-        expanded={node.expanded}
-        onToggleExpand={onToggleExpand}
-        onHeaderDragPointerDown={onHeaderDragPointerDown}
-        onBackgroundPointerDown={onSelect}
-        dimHeaderChrome={Boolean(node.disabled)}
-      >
-        {node.expanded ? (
+        <NodeShell
+          title={node.title}
+          titleContent={
+            <EditableNodeTitle
+              value={node.title}
+              onCommit={() => {}}
+              onTitleDragStart={onTitleDragStart}
+            />
+          }
+          frameVariant={node.frameVariant}
+          headerFillOverride={resolveGraphHeaderHex('gray', graphState.extendedPalette)}
+          selected={selected}
+          width={w}
+          expanded
+          onToggleExpand={() => {}}
+          headerTrailing={null}
+          onHeaderDragPointerDown={onHeaderDragPointerDown}
+          onBackgroundPointerDown={onSelect}
+          dimHeaderChrome={Boolean(node.disabled)}
+        >
           <div
             style={{
               position: 'relative',
               height: ROW_H,
-              display: 'flex',
-              alignItems: 'center',
-              paddingLeft: 12,
-              paddingRight: 12,
-              boxSizing: 'border-box',
+              ...nodeRow,
             }}
           >
             <div
@@ -93,7 +99,6 @@ export function OutputNodeView({
                 left: 0,
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
-                opacity: node.disabled && !inputConnected ? 0.5 : 1,
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -110,28 +115,16 @@ export function OutputNodeView({
                 clipOuterStrokeOn="left"
               />
             </div>
-            <span
+            <div
               className="text-sm text-muted shrink-0"
-              style={{ opacity: node.disabled ? 0.5 : 1 }}
+              style={{ ...nodeLabelColumn, marginLeft: 8 }}
             >
-              Graph output
-            </span>
-            {paramIn ? (
-              <span
-                className="text-sm text-emphasis truncate flex-1 min-w-0 text-right"
-                style={{
-                  lineHeight: 'var(--alpha-text-bodysmall-line-height)',
-                  opacity: 0.5,
-                  pointerEvents: 'none',
-                }}
-                title="Value supplied by a connected parameter. Disconnect the wire to configure locally."
-              >
-                {parameterDisplayValue(paramIn)}
+              <span className="truncate" style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}>
+                {node.rowLabel}
               </span>
-            ) : null}
+            </div>
           </div>
-        ) : null}
-      </NodeShell>
+        </NodeShell>
       </div>
     </div>
   );

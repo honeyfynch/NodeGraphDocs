@@ -1,5 +1,5 @@
 import { graphNodeWidth, nodeHeight } from './geometry';
-import type { GraphNode } from './types';
+import type { GraphEdge, GraphNode } from './types';
 
 export type GraphView = { tx: number; ty: number; scale: number };
 
@@ -15,7 +15,8 @@ export function viewToFrameNodes(
   containerHeight: number,
   padPx: number,
   minScale: number,
-  maxScale: number
+  maxScale: number,
+  edges: readonly GraphEdge[] = []
 ): GraphView | null {
   if (selectedIds.length === 0 || containerWidth <= 1 || containerHeight <= 1) return null;
   const picked = nodes.filter((n) => selectedIds.includes(n.id));
@@ -27,7 +28,7 @@ export function viewToFrameNodes(
   let maxGY = -Infinity;
   for (const n of picked) {
     const w = graphNodeWidth(n);
-    const h = nodeHeight(n);
+    const h = nodeHeight(n, edges);
     minGX = Math.min(minGX, n.x);
     minGY = Math.min(minGY, n.y);
     maxGX = Math.max(maxGX, n.x + w);

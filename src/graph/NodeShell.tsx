@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import type { ReactNode } from 'react';
 import type { FrameVariant } from './types';
-import { HEADER_H, PIN_OFFSET } from './geometry';
+import { HEADER_H, NODE_ROW_PIN_CENTER_Y_OFFSET, PIN_OFFSET } from './geometry';
 import { translucentFill50 } from './disabledVisual';
 import chevronCollapsedUrl from '../assets/icons/node-header-chevron-collapsed.svg?url';
 import chevronExpandedUrl from '../assets/icons/node-header-chevron-expanded.svg?url';
@@ -24,6 +24,10 @@ type Props = {
   frameVariant: FrameVariant;
   /** When set, overrides `frameVariant` for header fill (Figma Node `*_600` header vs `*_1000` pin). */
   headerFillOverride?: string;
+  /** When set, replaces default `var(--studio-surface-200)` for the expanded body shell. */
+  bodyBackgroundOverride?: string;
+  /** Outer card + header/body corner radius (px). Default `4` matches standard nodes; Generate uses `8`. */
+  cardBorderRadius?: number;
   selected: boolean;
   width: number;
   expanded: boolean;
@@ -50,6 +54,8 @@ export function NodeShell({
   titleContent,
   frameVariant,
   headerFillOverride,
+  bodyBackgroundOverride,
+  cardBorderRadius = 4,
   selected,
   width,
   expanded,
@@ -71,10 +77,11 @@ export function NodeShell({
   const headerBgBase = headerFillOverride ?? (headerStyle(frameVariant).background as string);
   const headerBackground =
     dimHeaderChrome && headerBgBase ? translucentFill50(headerBgBase) : headerBgBase;
-  const bodyBackground = dimHeaderChrome
-    ? translucentFill50('var(--studio-surface-200)')
-    : 'var(--studio-surface-200)';
+  const bodyFillBase = bodyBackgroundOverride ?? 'var(--studio-surface-200)';
+  const bodyBackground =
+    dimHeaderChrome && bodyFillBase ? translucentFill50(bodyFillBase) : bodyFillBase;
   const headerChromeOpacity = dimHeaderChrome ? 0.5 : 1;
+  const r = cardBorderRadius;
 
   return (
     <div
@@ -84,7 +91,7 @@ export function NodeShell({
       )}
       style={{
         width,
-        borderRadius: 4,
+        borderRadius: r,
         overflow: 'visible',
         position: 'relative',
       }}
@@ -100,7 +107,9 @@ export function NodeShell({
           background: headerBackground,
           position: 'relative',
           minHeight: HEADER_H,
-          borderRadius: showBody ? '4px 4px 0 0' : 4,
+          /** Lock height so body + input pins stay aligned with `pinGraphPosition` / `HEADER_H`. */
+          height: HEADER_H,
+          borderRadius: showBody ? `${r}px ${r}px 0 0` : r,
           boxSizing: 'border-box',
           paddingLeft: 4,
           paddingRight: headerTrailing != null ? 14 : 8,
@@ -167,7 +176,7 @@ export function NodeShell({
             style={{
               position: 'absolute',
               right: -PIN_OFFSET,
-              top: '50%',
+              top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
               transform: 'translateY(-50%)',
               zIndex: 2,
               opacity: headerChromeOpacity,
@@ -183,7 +192,7 @@ export function NodeShell({
           style={{
             background: bodyBackground,
             padding: 0,
-            borderRadius: '0 0 4px 4px',
+            borderRadius: `0 0 ${r}px ${r}px`,
             borderTop: 'none',
           }}
         >
