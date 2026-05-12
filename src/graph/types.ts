@@ -79,7 +79,7 @@ export type FunctionSlot = {
   label: string;
   propertyType: RowPropertyType;
   inputPinColor: GraphWireColorId;
-  /** When `propertyType === 'inputGroup'`: expand/collapse child rows (Figma `73:5652` toggle). */
+  /** When `propertyType === 'inputGroup'`: child rows visible only when explicitly `true` (default collapsed). */
   inputGroupExpanded?: boolean;
   /** Nested property rows; `inputPinColor` on children is ignored — use parent slot color for pins. */
   inputGroupChildSlots?: FunctionSlot[];
@@ -154,7 +154,7 @@ export function normalizeFunctionSlot(
     return {
       ...base,
       label: base.label || 'Inputs',
-      inputGroupExpanded: base.inputGroupExpanded !== false,
+      inputGroupExpanded: base.inputGroupExpanded === true,
       inputGroupChildSlots: children,
     };
   }

@@ -327,7 +327,7 @@ export function InspectorPanel() {
                   <Checkbox
                     label="Expanded"
                     hint="Show child rows on the node"
-                    checked={slot.inputGroupExpanded !== false}
+                    checked={slot.inputGroupExpanded === true}
                     onCheckedChange={(inputGroupExpanded) =>
                       dispatch({
                         type: 'updateFunctionSlot',

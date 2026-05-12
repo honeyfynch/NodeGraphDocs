@@ -151,7 +151,7 @@ function inputGroupChildren(slot: FunctionSlot): FunctionSlot[] {
 }
 
 function inputGroupExpanded(slot: FunctionSlot): boolean {
-  return slot.inputGroupExpanded !== false;
+  return slot.inputGroupExpanded === true;
 }
 
 export function generateWiredInIndices(nodeId: string, edges: readonly GraphEdge[]): number[] {

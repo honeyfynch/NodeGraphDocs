@@ -57,7 +57,7 @@ type Props = {
 };
 
 function groupExpanded(slot: FunctionSlot): boolean {
-  return slot.inputGroupExpanded !== false;
+  return slot.inputGroupExpanded === true;
 }
 
 function childSlots(slot: FunctionSlot): FunctionSlot[] {

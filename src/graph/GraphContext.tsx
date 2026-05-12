@@ -107,7 +107,6 @@ function defaultFunctionSlotsForNode(
         placeholderText: 'Placeholder',
         textValue: null,
         numberValues: [null, null, null],
-        inputGroupExpanded: true,
         inputGroupChildSlots: [
           normalizeFunctionSlot(
             {
