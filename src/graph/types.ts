@@ -179,8 +179,8 @@ export type ParameterNode = {
   /** When false, only the header row is shown (Figma collapse). */
   expanded: boolean;
   /**
-   * When true, node renders dimmed; edges from this node do not show play-mode flow animation.
-   * Toggle with ⌘⇧H (Ctrl⇧H on Windows) on the canvas.
+   * When true, node renders at reduced opacity; edges from this node do not show play-mode flow animation.
+   * Toggle with **M** or ⌘⇧H (Ctrl⇧H on Windows) on the canvas, context menus, or the context toolbar mute control.
    */
   disabled?: boolean;
   /** Custom width (px); default matches Figma chip width when unset. */
@@ -224,7 +224,7 @@ export type OutputNode = {
   width?: number;
 };
 
-/** Generative node — pins are always gray (`gray`); header uses neutral gray chrome (Figma `163:45377` / `163:47444`). */
+/** Generative node — output pin uses {@link UNIVERSAL_SOCKET_COLOR_ID} (`#BCBEC8`, Figma `163:45377`); header uses neutral gray chrome in the canvas. */
 export type GenerateNode = {
   kind: 'generate';
   id: string;
@@ -326,6 +326,7 @@ export type GroupNode = {
   width?: number;
   slotCount: number;
   slots: FunctionSlot[];
+  /** Fallback when no wire feeds the inner Group Output; canvas pin color follows that edge (see `groupCanvasOutputPinColorId`). */
   outputPinColor: GraphWireColorId;
   containedNodeIds: string[];
   bridges: GroupBridge[];

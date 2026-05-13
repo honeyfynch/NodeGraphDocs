@@ -34,6 +34,9 @@ export type GraphContextMenuProps = {
   onFrameSelection: () => void;
   onGroup: () => void;
   onUngroup: () => void;
+  /** When set, bottom section includes mute/unmute for the current selection. */
+  muteSelectionLabel?: string | null;
+  onMuteSelection?: () => void;
   /** When true, Ungroup is inactive (no group node in the current selection). */
   ungroupDisabled?: boolean;
 };
@@ -59,6 +62,8 @@ export function GraphContextMenu({
   onFrameSelection,
   onGroup,
   onUngroup,
+  muteSelectionLabel,
+  onMuteSelection,
   ungroupDisabled = false,
 }: GraphContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -97,24 +102,52 @@ export function GraphContextMenu({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (insertNodeSubmenuOpen) {
-        setInsertNodeSubmenuOpen(false);
+      if (e.repeat) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, [contenteditable=true]')) return;
+
+      if (e.key === 'Escape') {
+        if (insertNodeSubmenuOpen) {
+          setInsertNodeSubmenuOpen(false);
+          return;
+        }
+        if (insertNewParamColorSubmenuOpen) {
+          setInsertNewParamColorSubmenuOpen(false);
+          return;
+        }
+        if (insertParamSubmenuOpen) {
+          setInsertParamSubmenuOpen(false);
+          return;
+        }
+        onClose();
         return;
       }
-      if (insertNewParamColorSubmenuOpen) {
-        setInsertNewParamColorSubmenuOpen(false);
-        return;
+
+      if (
+        (e.key === 'm' || e.key === 'M') &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        muteSelectionLabel &&
+        onMuteSelection &&
+        hasSelection
+      ) {
+        e.preventDefault();
+        onMuteSelection();
       }
-      if (insertParamSubmenuOpen) {
-        setInsertParamSubmenuOpen(false);
-        return;
-      }
-      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, insertNodeSubmenuOpen, insertParamSubmenuOpen, insertNewParamColorSubmenuOpen]);
+  }, [
+    open,
+    onClose,
+    insertNodeSubmenuOpen,
+    insertParamSubmenuOpen,
+    insertNewParamColorSubmenuOpen,
+    muteSelectionLabel,
+    onMuteSelection,
+    hasSelection,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -227,6 +260,14 @@ export function GraphContextMenu({
           disabled={ungroupOff}
           onClick={onUngroup}
         />
+        {muteSelectionLabel ? (
+          <GraphMenuRow
+            label={muteSelectionLabel}
+            trailing={<span style={graphMenuHotkeyStyle}>M</span>}
+            disabled={selOff}
+            onClick={onMuteSelection}
+          />
+        ) : null}
       </div>
 
       <GraphMenuColorFlyout

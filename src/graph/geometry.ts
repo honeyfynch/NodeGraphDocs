@@ -105,14 +105,229 @@ export function generateOutputPreviewStackHeight(node: GenerateNode): number {
 
 /** Pin center sits this far outside the card edge (Figma full Node header pin). */
 export const PIN_OFFSET = 5;
-/** `.studio-node-card` uses a 1px border inside border-box; body rows align to this inner X. */
+/**
+ * Card uses `border: 1px solid transparent` + outer `box-shadow` stroke (`theme.css`); this constant
+ * is still the inner inset for pin / row layout math (same as previous inside border).
+ */
 export const NODE_CARD_CONTENT_INSET = 1;
-/** Outer `node.y` / `node.x` are the card top-left; chrome begins one pixel inside the border. */
+/** Outer `node.y` / `node.x` are the card top-left; chrome begins one pixel inside the transparent border. */
 export const NODE_CARD_BORDER = 1;
+/** Inspector → Experimental → Pin styling (socket ring + horizontal anchor vs node frame). */
+export type GraphPinStyleId = 'classic' | 'orbit' | 'contained';
+
+export const GRAPH_PIN_STYLE_IDS = ['classic', 'orbit', 'contained'] as const;
+
+export function isGraphPinStyleId(raw: string): raw is GraphPinStyleId {
+  return (GRAPH_PIN_STYLE_IDS as readonly string[]).includes(raw);
+}
+
+/**
+ * Pin ↔ node **outer** frame (px). Orbit: input right edge = nodeLeft − this; output left edge =
+ * nodeRight + this. Contained **inputs** / **outputs** mirror each other using
+ * {@link NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER} from the inner left/right card edges (not this anchor).
+ */
+export const PIN_STYLE_FRAME_ANCHOR_PX = 4;
+
+/** NodeShell header `paddingLeft` before chevron — must match `NodeShell.tsx`. */
+export const NODE_SHELL_HEADER_PADDING_LEFT_PX = 4;
+/** Chevron hit target width — must match `NodeShell` `.studio-node-chevron`. */
+export const NODE_SHELL_HEADER_CHEVRON_W_PX = 24;
+/** `gap-sm` between header chevron and title (`theme.css` / NodeShell `gap-sm`). */
+export const NODE_SHELL_HEADER_CHEVRON_TITLE_GAP_PX = 8;
+
+/** X from card **inner** left to header chevron **center** (graph px). */
+export const NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER =
+  NODE_SHELL_HEADER_PADDING_LEFT_PX + NODE_SHELL_HEADER_CHEVRON_W_PX / 2;
+
+/**
+ * X from card inner left to header **title** / input-group **title** text start (padding + chevron + gap).
+ * Matches NodeShell and Function `renderInputGroup` header chains.
+ */
+export const NODE_HEADER_TITLE_TEXT_X_FROM_CARD_INNER =
+  NODE_SHELL_HEADER_PADDING_LEFT_PX +
+  NODE_SHELL_HEADER_CHEVRON_W_PX +
+  NODE_SHELL_HEADER_CHEVRON_TITLE_GAP_PX;
+
+/**
+ * Matches `nodeLabelColumn.paddingLeft` (`figmaNodeTokens`) — row label **text** starts this far past
+ * the row’s `paddingLeft`.
+ */
+export const NODE_ROW_LABEL_TEXT_INSET_FROM_ROW_PADDING_PX = 4;
+
+/**
+ * `.NodeRow` horizontal `paddingLeft` when pin style is **contained** so label text lines up with
+ * header title text (`NODE_HEADER_TITLE_TEXT_X_FROM_CARD_INNER` − label column inset).
+ */
+export const NODE_ROW_CONTAINED_ROW_PADDING_LEFT_PX =
+  NODE_HEADER_TITLE_TEXT_X_FROM_CARD_INNER - NODE_ROW_LABEL_TEXT_INSET_FROM_ROW_PADDING_PX;
+
+/**
+ * Output-node body row `paddingLeft` when **contained** (no `nodeLabelColumn` pad; span starts at row pad).
+ */
+export const NODE_OUTPUT_BODY_CONTAINED_ROW_PADDING_LEFT_PX = NODE_HEADER_TITLE_TEXT_X_FROM_CARD_INNER;
+
+/**
+ * Horizontal row padding for `.NodeRow`-style property rows by pin style. Uses longhands so **classic**
+ * / **orbit** keep symmetric left/right (`--foundation-padding-small`); **contained** uses a larger left
+ * inset for title alignment without changing the right inset.
+ */
+export function nodeRowPaddingForPinStyle(pinStyle: GraphPinStyleId): {
+  paddingTop: string;
+  paddingBottom: string;
+  paddingLeft: string | number;
+  paddingRight: string;
+} {
+  const y = 'var(--foundation-padding-xsmall)';
+  const inset = 'var(--foundation-padding-small)';
+  if (pinStyle === 'contained') {
+    return {
+      paddingTop: y,
+      paddingBottom: y,
+      paddingLeft: NODE_ROW_CONTAINED_ROW_PADDING_LEFT_PX,
+      paddingRight: inset,
+    };
+  }
+  return {
+    paddingTop: y,
+    paddingBottom: y,
+    paddingLeft: inset,
+    paddingRight: inset,
+  };
+}
+
+export function pinStyleUsesFullOuterRing(style: GraphPinStyleId): boolean {
+  return style !== 'classic';
+}
+
+/** 2px `--studio-surface-0` halo (`.graph-pin-outer-ring`) — only **classic**; orbit/contained omit it. */
+export function pinStyleShowsOuterSurfaceRing(style: GraphPinStyleId): boolean {
+  return style === 'classic';
+}
+
+export function pinClipOuterForCanvas(
+  style: GraphPinStyleId,
+  side: 'left' | 'right'
+): 'left' | 'right' | undefined {
+  return pinStyleUsesFullOuterRing(style) ? undefined : side;
+}
+
+export function outputBodyInputPinCenterX(nodeX: number, pinStyle: GraphPinStyleId): number {
+  switch (pinStyle) {
+    case 'classic':
+      return nodeX + NODE_CARD_BORDER + OUTPUT_INPUT_ROW_PADDING_X;
+    case 'orbit':
+      return nodeX - PIN_STYLE_FRAME_ANCHOR_PX - NODE_INPUT_PIN_OUTER_R;
+    case 'contained':
+      return nodeX + NODE_CARD_BORDER + NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER;
+  }
+}
+
+/**
+ * `left` (px) for body input pins with `translate(-50%, …)` so center matches {@link functionLikeInputPinCenterX}.
+ *
+ * **Classic:** Browsers align this `left` with the padded content column of the row, so the graph origin
+ * includes `NODE_ROW_PADDING_X` (restores half-off pins like the header output).
+ *
+ * **Orbit:** subtract only `NODE_CARD_BORDER` so sockets match graph centers.
+ *
+ * **Contained:** same origin as orbit; centers use {@link NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER}.
+ */
+export function functionBodyInputPinLeftLocalPx(nodeX: number, pinStyle: GraphPinStyleId): number {
+  const center = functionLikeInputPinCenterX(nodeX, pinStyle);
+  if (pinStyle === 'classic') {
+    return center - (nodeX + NODE_CARD_BORDER + NODE_ROW_PADDING_X);
+  }
+  return center - (nodeX + NODE_CARD_BORDER);
+}
+
+/**
+ * `left` (px) for output-node body input with `translate(-50%, …)`; row uses `paddingLeft: OUTPUT_INPUT_ROW_PADDING_X`.
+ * Same classic vs orbit/contained origin split as {@link functionBodyInputPinLeftLocalPx}.
+ */
+export function outputBodyInputPinLeftLocalPx(nodeX: number, pinStyle: GraphPinStyleId): number {
+  const center = outputBodyInputPinCenterX(nodeX, pinStyle);
+  if (pinStyle === 'classic') {
+    return center - (nodeX + NODE_CARD_BORDER + OUTPUT_INPUT_ROW_PADDING_X);
+  }
+  return center - (nodeX + NODE_CARD_BORDER);
+}
+
+/**
+ * Collapsed-card input attachment X (graph space). **Classic** and **orbit** use the same flush-left
+ * stub so wires meet the frame; expanded **orbit** inputs still use {@link functionLikeInputPinCenterX}.
+ * **Contained** keeps the chevron-aligned center on the card.
+ */
+export function collapsedStubInputWireX(nodeX: number, pinStyle: GraphPinStyleId): number {
+  if (pinStyle === 'classic' || pinStyle === 'orbit') {
+    return nodeX + NODE_CARD_BORDER + NODE_INPUT_WIRE_X_NUDGE;
+  }
+  return functionLikeInputPinCenterX(nodeX, pinStyle);
+}
+
+export function functionLikeInputPinCenterX(nodeX: number, pinStyle: GraphPinStyleId): number {
+  switch (pinStyle) {
+    case 'classic':
+      return nodeX + NODE_CARD_BORDER + NODE_ROW_PADDING_X;
+    case 'orbit':
+      return nodeX - PIN_STYLE_FRAME_ANCHOR_PX - NODE_INPUT_PIN_OUTER_R;
+    case 'contained':
+      return nodeX + NODE_CARD_BORDER + NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER;
+  }
+}
+
+export function functionLikeOutputPinCenterX(nodeX: number, w: number, pinStyle: GraphPinStyleId): number {
+  const innerR = nodeX + w - NODE_CARD_BORDER;
+  const outerR = nodeX + w;
+  switch (pinStyle) {
+    case 'classic':
+      return innerR + PIN_OFFSET - NODE_INPUT_PIN_OUTER_R;
+    case 'orbit':
+      return outerR + PIN_STYLE_FRAME_ANCHOR_PX + NODE_INPUT_PIN_OUTER_R;
+    case 'contained':
+      return outerR - NODE_CARD_BORDER - NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER;
+  }
+}
+
+export function parameterOutputPinCenterX(nodeX: number, w: number, pinStyle: GraphPinStyleId): number {
+  const innerR = nodeX + w - NODE_CARD_CONTENT_INSET;
+  const outerR = nodeX + w;
+  switch (pinStyle) {
+    case 'classic':
+      return innerR + PIN_OFFSET - NODE_INPUT_PIN_OUTER_R;
+    case 'orbit':
+      return outerR + PIN_STYLE_FRAME_ANCHOR_PX + NODE_INPUT_PIN_OUTER_R;
+    case 'contained':
+      return outerR - NODE_CARD_BORDER - NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER;
+  }
+}
+
 /** Graph `Pin` socket outer diameter (px); core uses `box-sizing: border-box` at this size. */
 export const GRAPH_PIN_DIAMETER_PX = 9;
 /** Half of {@link GRAPH_PIN_DIAMETER_PX} — wire endpoints, flow dot, layout math. */
 export const NODE_INPUT_PIN_OUTER_R = GRAPH_PIN_DIAMETER_PX / 2;
+
+/**
+ * Extra outward shift for {@link NodeResizeEdges} when pin style is **orbit**: sockets sit outside the
+ * card while resize bands use `z-index: 4` above the shell, so bands must clear socket hit targets.
+ */
+export const GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX =
+  PIN_STYLE_FRAME_ANCHOR_PX + GRAPH_PIN_DIAMETER_PX;
+
+/**
+ * CSS `right` (px) for header / card-trailing output pin — tuned so pin center matches
+ * {@link functionLikeOutputPinCenterX} / {@link parameterOutputPinCenterX} vs classic `-PIN_OFFSET`.
+ */
+export function cardTrailingOutputRightCss(style: GraphPinStyleId): number {
+  switch (style) {
+    case 'classic':
+      return -PIN_OFFSET;
+    case 'orbit':
+      return -PIN_OFFSET - 2 * NODE_INPUT_PIN_OUTER_R;
+    case 'contained':
+      return NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER - NODE_INPUT_PIN_OUTER_R;
+  }
+}
+
 /** Bézier edge paths and ghost wire — SVG `stroke-width` (px). */
 export const GRAPH_WIRE_STROKE_PX = 2;
 /** Additional +X toward the card after flush math (pixel snap / anti-gap). */
@@ -341,42 +556,28 @@ export function nodeHeight(node: GraphNode, edges: readonly GraphEdge[] = []): n
 export function pinGraphPosition(
   node: GraphNode,
   port: GraphOutPort | `in-${number}`,
-  edges: readonly GraphEdge[] = []
+  edges: readonly GraphEdge[] = [],
+  pinStyle: GraphPinStyleId = 'classic'
 ): { x: number; y: number } {
   switch (node.kind) {
     case 'parameter': {
       const w = graphNodeParameterWidth(node);
-      /**
-       * Pin sits on `parameter-node-surface` (`inset: 1px` under the frame), then
-       * `right: -PIN_OFFSET` — center X uses graph width `w`.
-       * Subtract frame stroke inset and half the 9px pin (same as `NODE_INPUT_PIN_OUTER_R`).
-       */
       return {
-        x:
-          node.x +
-          w -
-          NODE_CARD_CONTENT_INSET +
-          PIN_OFFSET -
-          NODE_INPUT_PIN_OUTER_R,
+        x: parameterOutputPinCenterX(node.x, w, pinStyle),
         y: node.y + PARAMETER_CHIP_H / 2 + NODE_ROW_PIN_CENTER_Y_OFFSET,
       };
     }
     case 'function': {
       const w = graphNodeCardWidth(node);
       if (port === 'out') {
-        /**
-         * Header pin: `right: -PIN_OFFSET` from inner chrome — same inner-right base as parameter
-         * (`w - border` + offset − radius), not `node.x + w` (border-box outer would sit 1px too far).
-         */
         return {
-          x: node.x + w - NODE_CARD_BORDER + PIN_OFFSET - NODE_INPUT_PIN_OUTER_R,
+          x: functionLikeOutputPinCenterX(node.x, w, pinStyle),
           y: graphHeaderPinCenterY(node.y),
         };
       }
-      /* Collapsed: no input pins — end wires flush on the card’s left edge (not PIN_OFFSET outside). */
       if (collapsed(node)) {
         return {
-          x: node.x + NODE_CARD_BORDER + NODE_INPUT_WIRE_X_NUDGE,
+          x: collapsedStubInputWireX(node.x, pinStyle),
           y: graphHeaderPinCenterY(node.y),
         };
       }
@@ -386,9 +587,8 @@ export function pinGraphPosition(
       const centerY =
         hit?.centerY ??
         node.y + NODE_CARD_BORDER + HEADER_H + ROW_H / 2 + NODE_ROW_PIN_CENTER_Y_OFFSET;
-      /** Horizontal center of input socket (`left: 0` + `translate(-50%)` in padded row). */
       return {
-        x: node.x + NODE_CARD_BORDER + NODE_ROW_PADDING_X,
+        x: functionLikeInputPinCenterX(node.x, pinStyle),
         y: centerY,
       };
     }
@@ -396,13 +596,13 @@ export function pinGraphPosition(
       const w = graphNodeCardWidth(node);
       if (port === 'out') {
         return {
-          x: node.x + w - NODE_CARD_BORDER + PIN_OFFSET - NODE_INPUT_PIN_OUTER_R,
+          x: functionLikeOutputPinCenterX(node.x, w, pinStyle),
           y: graphHeaderPinCenterY(node.y),
         };
       }
       if (collapsed(node)) {
         return {
-          x: node.x + NODE_CARD_BORDER + NODE_INPUT_WIRE_X_NUDGE,
+          x: collapsedStubInputWireX(node.x, pinStyle),
           y: graphHeaderPinCenterY(node.y),
         };
       }
@@ -413,19 +613,19 @@ export function pinGraphPosition(
         hit?.centerY ??
         node.y + NODE_CARD_BORDER + HEADER_H + ROW_H / 2 + NODE_ROW_PIN_CENTER_Y_OFFSET;
       return {
-        x: node.x + NODE_CARD_BORDER + NODE_ROW_PADDING_X,
+        x: functionLikeInputPinCenterX(node.x, pinStyle),
         y: centerY,
       };
     }
     case 'output': {
       if (collapsed(node)) {
         return {
-          x: node.x + NODE_CARD_BORDER + NODE_INPUT_WIRE_X_NUDGE,
+          x: collapsedStubInputWireX(node.x, pinStyle),
           y: graphHeaderPinCenterY(node.y),
         };
       }
       return {
-        x: node.x + NODE_CARD_BORDER + OUTPUT_INPUT_ROW_PADDING_X,
+        x: outputBodyInputPinCenterX(node.x, pinStyle),
         y: inputSlotRowCenterY(node.y + NODE_CARD_BORDER + HEADER_H),
       };
     }
@@ -433,13 +633,13 @@ export function pinGraphPosition(
       const w = graphNodeCardWidth(node);
       if (port === 'out') {
         return {
-          x: node.x + w - NODE_CARD_BORDER + PIN_OFFSET - NODE_INPUT_PIN_OUTER_R,
+          x: functionLikeOutputPinCenterX(node.x, w, pinStyle),
           y: graphHeaderPinCenterY(node.y),
         };
       }
       if (collapsed(node)) {
         return {
-          x: node.x + NODE_CARD_BORDER + NODE_INPUT_WIRE_X_NUDGE,
+          x: collapsedStubInputWireX(node.x, pinStyle),
           y: graphHeaderPinCenterY(node.y),
         };
       }
@@ -454,7 +654,7 @@ export function pinGraphPosition(
         ROW_H / 2 +
         NODE_ROW_PIN_CENTER_Y_OFFSET;
       return {
-        x: node.x + NODE_CARD_BORDER + NODE_ROW_PADDING_X,
+        x: functionLikeInputPinCenterX(node.x, pinStyle),
         y: cy ?? yFallback,
       };
     }
@@ -474,19 +674,19 @@ export function pinGraphPosition(
         ROW_H / 2 +
         NODE_ROW_PIN_CENTER_Y_OFFSET;
       return {
-        x: node.x + w - NODE_CARD_BORDER + PIN_OFFSET - NODE_INPUT_PIN_OUTER_R,
+        x: functionLikeOutputPinCenterX(node.x, w, pinStyle),
         y: centerY,
       };
     }
     case 'groupOutput': {
       if (port === 'in-0') {
         return {
-          x: node.x + NODE_CARD_BORDER + NODE_ROW_PADDING_X,
+          x: functionLikeInputPinCenterX(node.x, pinStyle),
           y: inputSlotRowCenterY(node.y + NODE_CARD_BORDER + HEADER_H),
         };
       }
       return {
-        x: node.x + NODE_CARD_BORDER + NODE_INPUT_WIRE_X_NUDGE,
+        x: collapsedStubInputWireX(node.x, pinStyle),
         y: graphHeaderPinCenterY(node.y),
       };
     }

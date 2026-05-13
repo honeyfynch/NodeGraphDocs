@@ -3,16 +3,46 @@ import {
   inputPinColorForTarget,
   layoutFunctionInputPorts,
 } from './geometry';
-import type { GraphWireColorId } from './pinColors';
-import type { GraphEdge, GraphNode } from './types';
+import { wireColorsMatch, type GraphWireColorId } from './pinColors';
+import type { GraphEdge, GraphNode, GraphOutPort } from './types';
 
 /** Opacity for dimmed targets while routing (30% opaque). */
 const PROGRESSIVE_DIM_OPACITY = 0.3;
 
 export type WireDragForProgressive = {
   fromNodeId: string;
+  fromPort: GraphOutPort;
   colorId: GraphWireColorId;
 };
+
+/** Lane index for an output port (`out` and `out-0` both → 0). */
+function outPortLane(port: GraphOutPort): number {
+  if (port === 'out') return 0;
+  const m = /^out-(\d+)$/.exec(port);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * While routing a new wire from an output, dim every other output pin to {@link PROGRESSIVE_DIM_OPACITY};
+ * the pin under the active drag stays at 1.
+ *
+ * When the node’s whole card is already dimmed (no matching inputs), returns 1 so opacity is not
+ * multiplied twice with {@link progressiveWholeNodeOpacity}.
+ */
+export function progressiveOutputPinOpacity(
+  nodeId: string,
+  port: GraphOutPort,
+  wireDrag: WireDragForProgressive | null,
+  progressiveConnections: boolean,
+  wholeCardAtFullOpacity: boolean
+): number {
+  if (!progressiveConnections || !wireDrag) return 1;
+  if (nodeId === wireDrag.fromNodeId && outPortLane(port) === outPortLane(wireDrag.fromPort)) {
+    return 1;
+  }
+  if (!wholeCardAtFullOpacity) return 1;
+  return PROGRESSIVE_DIM_OPACITY;
+}
 
 /** True when any input on this node accepts `wireColor` (same rule as live edge preview). */
 export function nodeHasMatchingInputPin(
@@ -22,16 +52,16 @@ export function nodeHasMatchingInputPin(
 ): boolean {
   if (node.kind === 'parameter') return false;
   if (node.kind === 'groupInput') {
-    return node.outputs.some((o) => o.colorId === wireColor);
+    return node.outputs.some((o) => wireColorsMatch(wireColor, o.colorId));
   }
   if (node.kind === 'generate') {
     return node.expanded && node.inputGroupExpanded;
   }
-  if (node.kind === 'output') return node.inputPinColor === wireColor;
+  if (node.kind === 'output') return wireColorsMatch(wireColor, node.inputPinColor);
   if (node.kind === 'function' || node.kind === 'group') {
     for (const L of layoutFunctionInputPorts(node)) {
       const c = inputPinColorForTarget(node, L.target);
-      if (c !== null && c === wireColor) return true;
+      if (c !== null && wireColorsMatch(wireColor, c)) return true;
     }
   }
   return false;
@@ -95,5 +125,5 @@ export function progressiveInputPinMultiplier(
   if (node.kind === 'generate') return 1;
   const pinColor = inputPinColorForPort(node, port, edges);
   if (pinColor === null) return 1;
-  return pinColor === wireColor ? 1 : PROGRESSIVE_DIM_OPACITY;
+  return pinColor !== null && wireColorsMatch(wireColor, pinColor) ? 1 : PROGRESSIVE_DIM_OPACITY;
 }

@@ -23,7 +23,6 @@ export const GRAPH_INSERT_NODE_SUBMENU_ROWS: readonly {
   { label: 'Green', colorId: 'green' },
   { label: 'Rainforest', colorId: 'rainforest' },
   { label: 'Ice', colorId: 'ice' },
-  { label: 'Blue', colorId: 'blue' },
   { label: 'Purple', colorId: 'purple' },
   { label: 'Magenta', colorId: 'magenta' },
   { label: 'Berry', colorId: 'berry' },
@@ -34,7 +33,7 @@ export function graphInsertNodeSubmenuRows(
   extendedPalette: boolean
 ): readonly { label: string; colorId: GraphWireColorId }[] {
   if (extendedPalette) return GRAPH_INSERT_NODE_SUBMENU_ROWS;
-  return FOUNDATION_PALETTE_IDS.map((id) => ({
+  return FOUNDATION_PALETTE_IDS.filter((id) => id !== 'blue').map((id) => ({
     label: FOUNDATION_PALETTE_LABEL[id],
     colorId: id,
   }));

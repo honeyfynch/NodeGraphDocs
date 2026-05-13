@@ -1,12 +1,11 @@
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../foundation/Button';
 import { Checkbox } from '../foundation/Checkbox';
 import { Dropdown, DropdownItem } from '../foundation/Dropdown';
 import { NodePropertyFieldShell } from '../foundation/NodePropertyFieldShell';
 import { TextInput } from '../foundation/TextInput';
 import {
-  PIN_COLOR_IDS,
-  FOUNDATION_PALETTE_IDS,
+  configurableGraphWireColorIds,
   formatGraphWireColorOption,
   type GraphWireColorId,
 } from './pinColors';
@@ -15,6 +14,7 @@ import {
   portForInputGroupChild,
   portForTopLevelFunctionSlot,
 } from './graphWiring';
+import { isGraphPinStyleId } from './geometry';
 import { useGraph } from './GraphContext';
 import type { FrameVariant, FunctionSlot, RowPropertyType } from './types';
 import {
@@ -34,7 +34,10 @@ export function InspectorPanel() {
       ? state.selectedIds[state.selectedIds.length - 1]!
       : null;
   const node = sel ? state.nodes.find((n) => n.id === sel) : null;
-  const wireColorIds = state.extendedPalette ? PIN_COLOR_IDS : FOUNDATION_PALETTE_IDS;
+  const configurableWireColorIds = useMemo(
+    () => configurableGraphWireColorIds(state.extendedPalette),
+    [state.extendedPalette]
+  );
 
   const edgesHere = state.edges.filter(
     (e) =>
@@ -42,49 +45,85 @@ export function InspectorPanel() {
       state.selectedIds.includes(e.to.nodeId)
   );
 
+  const [inspectorTab, setInspectorTab] = useState<'settings' | 'experimental'>('settings');
+  const settingsTabLabel = node ? 'Node Settings' : 'Graph Settings';
+
   return (
-    <aside
-      className="bg-surface-inspector border-studio shrink-0 overflow-auto radius-panel"
-      style={{ width: 320, maxHeight: '100vh' }}
-    >
-      <div className="p-md flex-col gap-md border-studio border-b">
-        <h2 className="text-label-small text-emphasis m-0">Prototype Settings</h2>
-      </div>
-
-      <div className="p-md flex-col gap-sm border-studio border-b">
-        <div className="text-xs font-semibold text-emphasis">Graph Settings</div>
-        <NodePropertyFieldShell>
-          <Checkbox
-            label="Play mode"
-            hint="Graph can trigger a runtime mode"
-            checked={state.playMode}
-            onCheckedChange={(value) => dispatch({ type: 'setPlayMode', value })}
-          />
-        </NodePropertyFieldShell>
-        <NodePropertyFieldShell>
-          <Checkbox
-            label="Parameters"
-            hint="Graph integrates parameters"
-            checked={state.parametersEnabled}
-            onCheckedChange={(value) =>
-              dispatch({ type: 'setParametersEnabled', value })
+    <aside className="workbench-inspector-panel" aria-label="Inspector" data-node-id="2013:190316">
+      <div className="workbench-inspector-tabbar">
+        <div className="workbench-inspector-tabbar__tabs">
+          <button
+            type="button"
+            className={
+              inspectorTab === 'settings'
+                ? 'workbench-inspector-tab workbench-inspector-tab--selected'
+                : 'workbench-inspector-tab'
             }
-          />
-        </NodePropertyFieldShell>
-        <NodePropertyFieldShell>
-          <Checkbox
-            label="Generative Nodes"
-            hint="Graph integrates generative nodes."
-            checked={state.generativeNodesEnabled}
-            onCheckedChange={(value) =>
-              dispatch({ type: 'setGenerativeNodesEnabled', value })
+            onClick={() => setInspectorTab('settings')}
+          >
+            <span className="text-label-small font-semibold">{settingsTabLabel}</span>
+          </button>
+          <button
+            type="button"
+            className={
+              inspectorTab === 'experimental'
+                ? 'workbench-inspector-tab workbench-inspector-tab--selected'
+                : 'workbench-inspector-tab'
             }
-          />
-        </NodePropertyFieldShell>
+            onClick={() => setInspectorTab('experimental')}
+          >
+            <span className="text-label-small font-semibold">Experimental Settings</span>
+          </button>
+        </div>
+        <div className="workbench-inspector-tabbar__actions">
+          <button
+            type="button"
+            className="workbench-inspector-tabbar__icon-btn"
+            aria-label="Panel menu"
+          >
+            ⋯
+          </button>
+        </div>
       </div>
+      <div className="workbench-inspector-body overflow-auto foundation-scrollbar">
+        {inspectorTab === 'settings' ? (
+          <>
+            {state.selectedIds.length === 0 ? (
+              <div className="p-md flex-col gap-sm workbench-inspector-section-divider">
+                <div className="text-xs font-semibold text-emphasis">Graph</div>
+                <NodePropertyFieldShell variant="plain">
+                  <Checkbox
+                    label="Play mode"
+                    hint="Graph can trigger a runtime mode"
+                    checked={state.playMode}
+                    onCheckedChange={(value) => dispatch({ type: 'setPlayMode', value })}
+                  />
+                </NodePropertyFieldShell>
+                <NodePropertyFieldShell variant="plain">
+                  <Checkbox
+                    label="Parameters"
+                    hint="Graph integrates parameters"
+                    checked={state.parametersEnabled}
+                    onCheckedChange={(value) =>
+                      dispatch({ type: 'setParametersEnabled', value })
+                    }
+                  />
+                </NodePropertyFieldShell>
+                <NodePropertyFieldShell variant="plain">
+                  <Checkbox
+                    label="Generative Nodes"
+                    hint="Graph integrates generative nodes."
+                    checked={state.generativeNodesEnabled}
+                    onCheckedChange={(value) =>
+                      dispatch({ type: 'setGenerativeNodesEnabled', value })
+                    }
+                  />
+                </NodePropertyFieldShell>
+              </div>
+            ) : null}
 
-      <div className="p-md flex-col gap-md border-studio border-b">
-        <div className="text-xs font-semibold text-emphasis">Node Settings</div>
+            <div className="p-md flex-col gap-md workbench-inspector-section-divider">
+              <div className="text-xs font-semibold text-emphasis">Node</div>
         {!node && (
           <div className="text-sm text-muted">Select a node on the canvas.</div>
         )}
@@ -147,14 +186,14 @@ export function InspectorPanel() {
                 })
               }
             >
-              {wireColorIds.map((id) => (
+              {configurableWireColorIds.map((id) => (
                 <DropdownItem key={id} value={id}>
                   {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                 </DropdownItem>
               ))}
             </Dropdown>
           </Field>
-          <NodePropertyFieldShell>
+          <NodePropertyFieldShell variant="plain">
             <Checkbox
               label="Value row"
               hint="Optional row below the chip (Figma `73:6071` is single-row)."
@@ -235,7 +274,7 @@ export function InspectorPanel() {
                 })
               }
             >
-              {wireColorIds.map((id) => (
+              {configurableWireColorIds.map((id) => (
                 <DropdownItem key={id} value={id}>
                   {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                 </DropdownItem>
@@ -316,14 +355,14 @@ export function InspectorPanel() {
                       })
                     }
                   >
-                    {wireColorIds.map((id) => (
+                    {configurableWireColorIds.map((id) => (
                       <DropdownItem key={id} value={id}>
                         {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                       </DropdownItem>
                     ))}
                   </Dropdown>
                 </Field>
-                <NodePropertyFieldShell>
+                <NodePropertyFieldShell variant="plain">
                   <Checkbox
                     label="Expanded"
                     hint="Show child rows on the node"
@@ -506,7 +545,7 @@ export function InspectorPanel() {
                       })
                     }
                   >
-                    {wireColorIds.map((id) => (
+                    {configurableWireColorIds.map((id) => (
                       <DropdownItem key={id} value={id}>
                         {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                       </DropdownItem>
@@ -629,7 +668,7 @@ export function InspectorPanel() {
               }
             />
           </Field>
-          <NodePropertyFieldShell>
+          <NodePropertyFieldShell variant="plain">
             <Checkbox
               label="Inputs section expanded"
               hint="When expanded, the node shows the Inputs group rows on the canvas."
@@ -643,7 +682,7 @@ export function InspectorPanel() {
               }
             />
           </NodePropertyFieldShell>
-          <NodePropertyFieldShell>
+          <NodePropertyFieldShell variant="plain">
             <Checkbox
               label="Body expanded"
               hint="When collapsed, only the node header is shown."
@@ -705,7 +744,7 @@ export function InspectorPanel() {
                 })
               }
             >
-              {wireColorIds.map((id) => (
+              {configurableWireColorIds.map((id) => (
                 <DropdownItem key={id} value={id}>
                   {formatGraphWireColorOption(id as GraphWireColorId, state.extendedPalette)}
                 </DropdownItem>
@@ -717,7 +756,7 @@ export function InspectorPanel() {
       </div>
 
       {node && (
-        <div className="p-md flex-col gap-sm border-studio border-t">
+        <div className="p-md flex-col gap-sm workbench-inspector-section-divider">
           <div className="text-xs font-semibold text-emphasis">Connections</div>
           {edgesHere.length === 0 && (
             <div className="text-xs text-muted">No edges attached.</div>
@@ -741,46 +780,74 @@ export function InspectorPanel() {
           ))}
         </div>
       )}
-
-      <div className="p-md flex-col gap-sm border-studio border-t">
-        <div className="text-xs font-semibold text-emphasis">Experimental Settings</div>
-        <NodePropertyFieldShell>
-          <Checkbox
-            label="Show guide"
-            checked={state.showGraphGuide}
-            onCheckedChange={(value) =>
-              dispatch({ type: 'setShowGraphGuide', value })
-            }
-          />
-        </NodePropertyFieldShell>
-        <NodePropertyFieldShell>
-          <Checkbox
-            label="Progressive connections"
-            checked={state.progressiveConnections}
-            onCheckedChange={(value) =>
-              dispatch({ type: 'setProgressiveConnections', value })
-            }
-          />
-        </NodePropertyFieldShell>
-        <NodePropertyFieldShell>
-          <Checkbox
-            label="Click-drag to connect pins"
-            checked={state.clickDragPinWiring}
-            onCheckedChange={(value) =>
-              dispatch({ type: 'setClickDragPinWiring', value })
-            }
-          />
-        </NodePropertyFieldShell>
-        <NodePropertyFieldShell>
-          <Checkbox
-            label="Extended palette"
-            hint="Lima, Berry, Yellow, … When off, node colors use Figma Data categorical contrast tokens (Blue, Berry, Rainforest, …)."
-            checked={state.extendedPalette}
-            onCheckedChange={(value) =>
-              dispatch({ type: 'setExtendedPalette', value })
-            }
-          />
-        </NodePropertyFieldShell>
+          </>
+        ) : (
+          <div className="p-md flex-col gap-sm">
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
+                label="Show guide"
+                checked={state.showGraphGuide}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setShowGraphGuide', value })
+                }
+              />
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
+                label="Progressive connections"
+                checked={state.progressiveConnections}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setProgressiveConnections', value })
+                }
+              />
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
+                label="Context Toolbar"
+                checked={state.contextToolbar}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setContextToolbar', value })
+                }
+              />
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell>
+              <Field label="Pin styling">
+                <Dropdown
+                  variant="nodeProperty"
+                  value={state.pinStyle}
+                  onChange={(v) => {
+                    if (isGraphPinStyleId(v)) {
+                      dispatch({ type: 'setPinStyle', value: v });
+                    }
+                  }}
+                >
+                  <DropdownItem value="classic">Classic</DropdownItem>
+                  <DropdownItem value="orbit">Orbit</DropdownItem>
+                  <DropdownItem value="contained">Contained</DropdownItem>
+                </Dropdown>
+              </Field>
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
+                label="Click-drag to connect pins"
+                checked={state.clickDragPinWiring}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setClickDragPinWiring', value })
+                }
+              />
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
+                label="Extended palette"
+                hint="Lima, Berry, Yellow, … When off, node colors use Figma Data categorical contrast tokens (Blue, Berry, Rainforest, …)."
+                checked={state.extendedPalette}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setExtendedPalette', value })
+                }
+              />
+            </NodePropertyFieldShell>
+          </div>
+        )}
       </div>
     </aside>
   );

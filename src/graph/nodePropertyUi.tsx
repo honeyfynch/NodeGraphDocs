@@ -1,10 +1,11 @@
 import clsx from 'clsx';
 import type { CSSProperties } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { Dropdown, DropdownItem } from '../foundation/Dropdown';
 import { ChevronDown12 } from '../foundation/ChevronDown12';
 import { NodePropertyFieldShell } from '../foundation/NodePropertyFieldShell';
 import { foundationLayout } from './figmaNodeTokens';
+import { GraphCanvasUiScaleContext } from './graphCanvasUiScaleContext';
 import type { FunctionSlot, RowPropertyType } from './types';
 
 /** Figma `.NodeProperty` field shell — `73:5672` / `73:5679` / `73:5695` (`get_design_context` on symbols). */
@@ -34,6 +35,7 @@ const NODE_PROP_DROPDOWN_EMPTY = '__node_prop_dropdown_empty__';
 function Dropdown1X({ slot, onPatch }: { slot: FunctionSlot; onPatch: OnPatch }) {
   const v = slot.textValue ?? '';
   const value = v === '' ? NODE_PROP_DROPDOWN_EMPTY : v;
+  const menuScale = useContext(GraphCanvasUiScaleContext);
   return (
     <div
       className="flex-1 min-w-0"
@@ -41,6 +43,7 @@ function Dropdown1X({ slot, onPatch }: { slot: FunctionSlot; onPatch: OnPatch })
     >
       <Dropdown
         variant="nodeProperty"
+        menuScale={menuScale}
         ariaLabel={slot.label}
         placeholder={slot.placeholderText}
         value={value}

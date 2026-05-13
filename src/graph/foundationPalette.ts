@@ -1,7 +1,7 @@
 /**
  * Default graph color tokens — Figma **Node-Graph-Draft** `155:13740` (`get_variable_defs` on that node).
  * `DataCategorical Contrast/Categorical_*` → camelCase ids here.
- * One hex per token for header fill, pin stroke, and wires (unified categorical ramp).
+ * Categorical **Gray** — `367:22748` (`get_variable_defs`): pin/wire `Gray/Gray_700`, header `Gray/Gray_600`.
  */
 
 export const FOUNDATION_PALETTE_IDS = [
@@ -13,6 +13,7 @@ export const FOUNDATION_PALETTE_IDS = [
   'purple',
   'rainforest',
   'red',
+  'gray',
 ] as const;
 
 export type FoundationPaletteId = (typeof FOUNDATION_PALETTE_IDS)[number];
@@ -27,6 +28,8 @@ export const FOUNDATION_PALETTE_HEX: Record<FoundationPaletteId, string> = {
   purple: '#724ec0',
   rainforest: '#1b6f5e',
   red: '#d14e42',
+  /** Gray_700 — sockets / wires (Figma `367:22748`). */
+  gray: '#6a6f81',
 };
 
 /** Inspector / menus — human-readable (matches Figma variable suffixes). */
@@ -39,6 +42,7 @@ export const FOUNDATION_PALETTE_LABEL: Record<FoundationPaletteId, string> = {
   purple: 'Purple',
   rainforest: 'Rainforest',
   red: 'Red',
+  gray: 'Gray',
 };
 
 /** Removed tint ids → base hue (persisted graphs / URLs may still reference tints). */

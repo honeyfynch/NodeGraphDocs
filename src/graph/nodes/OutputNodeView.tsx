@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useGraph } from '../GraphContext';
 import { findIncomingParameterSource, parameterDisplayValue } from '../graphWiring';
 import type { OutputNode } from '../types';
@@ -6,6 +7,9 @@ import {
   nodeHeight,
   ROW_H,
   NODE_ROW_PIN_CENTER_Y_OFFSET,
+  outputBodyInputPinLeftLocalPx,
+  NODE_OUTPUT_BODY_CONTAINED_ROW_PADDING_LEFT_PX,
+  OUTPUT_INPUT_ROW_PADDING_X,
 } from '../geometry';
 import { resolveGraphHeaderHex } from '../pinColors';
 import { NodeShell } from '../NodeShell';
@@ -25,6 +29,8 @@ type Props = {
   onInputPointerUp: (e: React.PointerEvent) => void;
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
+  showExpandChevron?: boolean;
+  onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
 export function OutputNodeView({
@@ -39,21 +45,31 @@ export function OutputNodeView({
   onInputPointerUp,
   onResizeEdgePointerDown,
   onNodeContextMenu,
+  showExpandChevron = true,
+  onBoundsEl,
 }: Props) {
   const { state } = useGraph();
   const w = graphNodeWidth(node);
   const h = nodeHeight(node);
   const paramIn = findIncomingParameterSource(state.nodes, state.edges, node.id, 'in-0');
 
+  const boundsRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      onBoundsEl?.(el);
+    },
+    [onBoundsEl]
+  );
+
   return (
     <div
       className="absolute"
+      ref={boundsRef}
       style={{
         left: node.x,
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
-        opacity: progressiveCardOpacity,
+        opacity: (node.disabled ? 0.3 : 1) * progressiveCardOpacity,
       }}
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);
@@ -61,7 +77,11 @@ export function OutputNodeView({
     >
       <div style={{ position: 'relative', minHeight: h }}>
         {onResizeEdgePointerDown ? (
-          <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
+          <NodeResizeEdges
+            node={node}
+            onEdgePointerDown={onResizeEdgePointerDown}
+            pinStyle={state.pinStyle}
+          />
         ) : null}
       <NodeShell
         title={node.title}
@@ -73,7 +93,8 @@ export function OutputNodeView({
         onToggleExpand={onToggleExpand}
         onHeaderDragPointerDown={onHeaderDragPointerDown}
         onBackgroundPointerDown={onSelect}
-        dimHeaderChrome={Boolean(node.disabled)}
+        dimHeaderChrome={false}
+        showExpandChevron={showExpandChevron}
       >
         {node.expanded ? (
           <div
@@ -82,18 +103,21 @@ export function OutputNodeView({
               height: ROW_H,
               display: 'flex',
               alignItems: 'center',
-              paddingLeft: 12,
-              paddingRight: 12,
+              paddingLeft:
+                state.pinStyle === 'contained'
+                  ? NODE_OUTPUT_BODY_CONTAINED_ROW_PADDING_LEFT_PX
+                  : OUTPUT_INPUT_ROW_PADDING_X,
+              paddingRight: OUTPUT_INPUT_ROW_PADDING_X,
               boxSizing: 'border-box',
             }}
           >
             <div
               style={{
                 position: 'absolute',
-                left: 0,
+                left: outputBodyInputPinLeftLocalPx(node.x, state.pinStyle),
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
-                opacity: node.disabled && !inputConnected ? 0.5 : 1,
+                opacity: 1,
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -112,7 +136,7 @@ export function OutputNodeView({
             </div>
             <span
               className="text-sm text-muted shrink-0"
-              style={{ opacity: node.disabled ? 0.5 : 1 }}
+              style={{ opacity: 1 }}
             >
               Graph output
             </span>

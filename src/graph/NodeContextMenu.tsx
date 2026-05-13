@@ -37,6 +37,8 @@ export type NodeContextMenuProps = {
   onFrameSelection: () => void;
   onGroup: () => void;
   onUngroup: () => void;
+  muteSelectionLabel?: string | null;
+  onMuteSelection?: () => void;
 };
 
 export function NodeContextMenu({
@@ -58,6 +60,8 @@ export function NodeContextMenu({
   onFrameSelection,
   onGroup,
   onUngroup,
+  muteSelectionLabel,
+  onMuteSelection,
 }: NodeContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const swapSubmenuRef = useRef<HTMLDivElement>(null);
@@ -83,16 +87,35 @@ export function NodeContextMenu({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (swapSubmenuOpen) {
-        setSwapSubmenuOpen(false);
+      if (e.repeat) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, [contenteditable=true]')) return;
+
+      if (e.key === 'Escape') {
+        if (swapSubmenuOpen) {
+          setSwapSubmenuOpen(false);
+          return;
+        }
+        onClose();
         return;
       }
-      onClose();
+
+      if (
+        (e.key === 'm' || e.key === 'M') &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        muteSelectionLabel &&
+        onMuteSelection &&
+        hasSelection
+      ) {
+        e.preventDefault();
+        onMuteSelection();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, swapSubmenuOpen]);
+  }, [open, onClose, swapSubmenuOpen, muteSelectionLabel, onMuteSelection, hasSelection]);
 
   useEffect(() => {
     if (!open) return;
@@ -194,6 +217,14 @@ export function NodeContextMenu({
           disabled={ungroupOff}
           onClick={onUngroup}
         />
+        {muteSelectionLabel ? (
+          <GraphMenuRow
+            label={muteSelectionLabel}
+            trailing={<span style={graphMenuHotkeyStyle}>M</span>}
+            disabled={!hasSelection}
+            onClick={onMuteSelection}
+          />
+        ) : null}
       </div>
 
       <GraphMenuColorFlyout

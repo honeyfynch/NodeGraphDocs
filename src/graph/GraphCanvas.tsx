@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { nodeIdsIntersectingGraphRect } from './graphBoxSelect';
 import { viewToFrameNodes } from './graphFrameSelection';
 import { graphInsertNodeSubmenuRows } from './graphInsertNodeMenu';
 import { GraphContextMenu } from './GraphContextMenu';
 import { GraphParameterPanel } from './GraphParameterPanel';
 import { NodeContextMenu } from './NodeContextMenu';
 import { GraphNavigationGuide } from './GraphNavigationGuide';
+import { GraphRibbon } from './GraphRibbon';
 import { useGraph } from './GraphContext';
-import { isInputConnectedWithGroupBridges } from './graphGroupOps';
+import { groupCanvasOutputPinColorId, isInputConnectedWithGroupBridges } from './graphGroupOps';
 import { edgeVisibleForGraphScope, nodeVisibleForGraphScope } from './graphGroupScope';
 import type { GraphEdge, GraphNode, GraphOutPort } from './types';
 import {
@@ -21,12 +23,20 @@ import {
   NODE_INPUT_PIN_OUTER_R,
   pinGraphPosition,
   portsForInputGroupSlot,
+  type GraphPinStyleId,
 } from './geometry';
 import {
+  nodeHasMatchingInputPin,
   progressiveInputPinMultiplier,
+  progressiveOutputPinOpacity,
   progressiveWholeNodeOpacity,
 } from './graphProgressiveConnections';
-import { resolveGraphPinHex, type GraphWireColorId } from './pinColors';
+import {
+  resolveGraphPinHex,
+  wireColorsMatch,
+  UNIVERSAL_SOCKET_COLOR_ID,
+  type GraphWireColorId,
+} from './pinColors';
 import { findIncomingEdgeToPort } from './graphWiring';
 import { ParameterNodeView } from './nodes/ParameterNodeView';
 import { FunctionNodeView } from './nodes/FunctionNodeView';
@@ -34,7 +44,8 @@ import { OutputNodeView } from './nodes/OutputNodeView';
 import { GenerateNodeView } from './nodes/GenerateNodeView';
 import { GroupInputNodeView } from './nodes/GroupInputNodeView';
 import { GroupOutputNodeView } from './nodes/GroupOutputNodeView';
-import { GraphPlayModeControl } from './GraphPlayModeControl';
+import { GraphSelectionContextToolbar } from './GraphSelectionContextToolbar';
+import { GraphCanvasUiScaleContext } from './graphCanvasUiScaleContext';
 
 const WORLD_W = 2400;
 const WORLD_H = 1600;
@@ -44,6 +55,9 @@ const EDGE_FLOW_DURATION_SEC = 1.5;
 
 /** Pixels before a drag from a connected *input* pin removes that edge (avoids accidental disconnect on click). */
 const WIRE_DRAG_THRESHOLD_PX = 6;
+
+/** Client movement below this (squared) is treated as a click on empty canvas, not a marquee. */
+const BOX_SELECT_TINY_CLIENT_PX2 = 36;
 
 type View = { tx: number; ty: number; scale: number };
 
@@ -102,13 +116,28 @@ type PanDrag =
       startY: number;
     };
 
+type BoxSelectDrag = {
+  gx0: number;
+  gy0: number;
+  gx1: number;
+  gy1: number;
+  startClientX: number;
+  startClientY: number;
+  additive: boolean;
+};
+
 /** Bézier `d` for the wire; path runs output → input so flow animation matches data direction. */
-function edgePath(edge: GraphEdge, nodes: GraphNode[], edges: GraphEdge[]): string | null {
+function edgePath(
+  edge: GraphEdge,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  pinStyle: GraphPinStyleId
+): string | null {
   const fromNode = nodes.find((n) => n.id === edge.from.nodeId);
   const toNode = nodes.find((n) => n.id === edge.to.nodeId);
   if (!fromNode || !toNode) return null;
-  const a = pinGraphPosition(fromNode, edge.from.port, edges);
-  const b = pinGraphPosition(toNode, edge.to.port, edges);
+  const a = pinGraphPosition(fromNode, edge.from.port, edges, pinStyle);
+  const b = pinGraphPosition(toNode, edge.to.port, edges, pinStyle);
   return bezierPath(a.x, a.y, b.x, b.y);
 }
 
@@ -125,8 +154,9 @@ function canPreviewEdge(
   if (!fromNode || !toNode) return null;
   let outColor: GraphWireColorId;
   if (fromNode.kind === 'parameter') outColor = fromNode.outputPinColor;
-  else if (fromNode.kind === 'function' || fromNode.kind === 'group') outColor = fromNode.outputPinColor;
-  else if (fromNode.kind === 'generate') outColor = 'gray';
+  else if (fromNode.kind === 'function') outColor = fromNode.outputPinColor;
+  else if (fromNode.kind === 'group') outColor = groupCanvasOutputPinColorId(fromNode, edges);
+  else if (fromNode.kind === 'generate') outColor = UNIVERSAL_SOCKET_COLOR_ID;
   else if (fromNode.kind === 'groupInput') {
     const idx = fromPort === 'out' ? 0 : Number(fromPort.slice(4));
     const row = fromNode.outputs[idx];
@@ -138,17 +168,17 @@ function canPreviewEdge(
     const hit = layouts.find((L) => L.port === toPort);
     if (!hit) return null;
     const inColor = inputPinColorForTarget(toNode, hit.target) ?? 'gray';
-    if (outColor !== inColor) return null;
+    if (!wireColorsMatch(outColor, inColor)) return null;
     return outColor;
   }
   if (toNode.kind === 'output') {
     if (toPort !== 'in-0') return null;
-    if (outColor !== toNode.inputPinColor) return null;
+    if (!wireColorsMatch(outColor, toNode.inputPinColor)) return null;
     return outColor;
   }
   if (toNode.kind === 'groupOutput') {
     if (toPort !== 'in-0') return null;
-    if (outColor !== toNode.inputPinColor) return null;
+    if (!wireColorsMatch(outColor, toNode.inputPinColor)) return null;
     return outColor;
   }
   if (toNode.kind === 'generate') {
@@ -173,6 +203,28 @@ function inputsEditableForWiring(node: GraphNode | undefined): boolean {
   return node.expanded;
 }
 
+/** Output + group I/O: context toolbar and its hotkeys only affect other selected nodes (not these kinds). */
+const CONTEXT_TOOLBAR_EXCLUDED_NODE_KINDS: ReadonlySet<GraphNode['kind']> = new Set([
+  'output',
+  'groupInput',
+  'groupOutput',
+]);
+
+/** Selected ids that support expand/mute/play/run from the experimental context toolbar (preserves selection order). */
+function idsForContextToolbarActions(
+  nodes: readonly GraphNode[],
+  selectedIds: readonly string[]
+): string[] {
+  const nodeById = new Map(nodes.map((n) => [n.id, n] as const));
+  const out: string[] = [];
+  for (const id of selectedIds) {
+    const n = nodeById.get(id);
+    if (!n || CONTEXT_TOOLBAR_EXCLUDED_NODE_KINDS.has(n.kind)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
 export function GraphCanvas() {
   const { state, dispatch, connectEdge } = useGraph();
   const insertNodeColorRows = useMemo(
@@ -185,6 +237,7 @@ export function GraphCanvas() {
   const [nodeDrag, setNodeDrag] = useState<NodeDrag>(null);
   const [panDrag, setPanDrag] = useState<PanDrag>(null);
   const [resizeDrag, setResizeDrag] = useState<ResizeDrag>(null);
+  const [boxSelect, setBoxSelect] = useState<BoxSelectDrag | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     clientX: number;
     clientY: number;
@@ -220,6 +273,47 @@ export function GraphCanvas() {
   const viewRef = useRef(view);
   viewRef.current = view;
 
+  const boxSelectRef = useRef<BoxSelectDrag | null>(null);
+  const backdropRef = useRef<HTMLDivElement | null>(null);
+  const pickStateRef = useRef({
+    nodes: state.nodes,
+    edges: state.edges,
+    graphScope: state.graphScope,
+    selectedIds: state.selectedIds,
+  });
+  pickStateRef.current = {
+    nodes: state.nodes,
+    edges: state.edges,
+    graphScope: state.graphScope,
+    selectedIds: state.selectedIds,
+  };
+
+  const nodeBoundsRefMap = useRef(new Map<string, HTMLElement>());
+  const [boundsEpoch, setBoundsEpoch] = useState(0);
+  const nodeBoundsElCallbackByIdRef = useRef(
+    new Map<string, (el: HTMLDivElement | null) => void>()
+  );
+  const getNodeBoundsElCallback = useCallback((id: string) => {
+    const cache = nodeBoundsElCallbackByIdRef.current;
+    let cb = cache.get(id);
+    if (!cb) {
+      cb = (el: HTMLDivElement | null) => {
+        const m = nodeBoundsRefMap.current;
+        const prev = m.get(id);
+        if (el) {
+          if (prev === el) return;
+          m.set(id, el);
+        } else {
+          if (!m.has(id)) return;
+          m.delete(id);
+        }
+        setBoundsEpoch((x) => x + 1);
+      };
+      cache.set(id, cb);
+    }
+    return cb;
+  }, []);
+
   /** Bumped when graph play goes inactive → active so flow circles remount and SMIL restarts at path start. */
   const [flowEpoch, setFlowEpoch] = useState(0);
   const prevGraphPlayActiveRef = useRef(state.graphPlayActive);
@@ -231,6 +325,47 @@ export function GraphCanvas() {
       setFlowEpoch((e) => e + 1);
     }
   }, [state.graphPlayActive, state.playMode]);
+
+  const prevLocalPlayKeyRef = useRef('');
+  useEffect(() => {
+    const k = [...state.localPlayNodeIds].sort().join(',');
+    const prev = prevLocalPlayKeyRef.current;
+    prevLocalPlayKeyRef.current = k;
+    if (state.playMode && k !== prev) {
+      setFlowEpoch((e) => e + 1);
+    }
+  }, [state.localPlayNodeIds, state.playMode]);
+
+  const selectionMuteMenuLabel = useMemo(() => {
+    if (state.selectedIds.length === 0) return null;
+    const first = state.nodes.find((n) => n.id === state.selectedIds[0]);
+    if (!first) return null;
+    return first.disabled ? 'Unmute selection' : 'Mute selection';
+  }, [state.selectedIds, state.nodes]);
+
+  const handleSelectionMuteMenu = useCallback(() => {
+    if (!selectionMuteMenuLabel) return;
+    dispatch({
+      type: 'setSelectionMuted',
+      muted: selectionMuteMenuLabel === 'Mute selection',
+    });
+  }, [dispatch, selectionMuteMenuLabel]);
+
+  const showExpandChevron = !state.contextToolbar;
+
+  const contextToolbarTargetIds = useMemo(
+    () => idsForContextToolbarActions(state.nodes, state.selectedIds),
+    [state.nodes, state.selectedIds]
+  );
+
+  /** No toolbar targets (e.g. only Output / group I/O): hide toolbar and suppress M / ⌘⇧H when experiment is on. */
+  const contextToolbarActionsSuppressed = useMemo(
+    () =>
+      state.contextToolbar &&
+      state.selectedIds.length > 0 &&
+      contextToolbarTargetIds.length === 0,
+    [state.contextToolbar, state.selectedIds.length, contextToolbarTargetIds.length]
+  );
 
   const clientToGraph = useCallback((clientX: number, clientY: number) => {
     const el = containerRef.current;
@@ -277,33 +412,38 @@ export function GraphCanvas() {
     if (next) setView(next);
   }, [state.nodes, state.selectedIds, state.edges]);
 
-  const onWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const el = containerRef.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        const mx = e.clientX - r.left;
-        const my = e.clientY - r.top;
-        const zoomFactor = e.deltaY > 0 ? 0.92 : 1.08;
-        setView((v) => {
-          const nextScale = Math.min(2.5, Math.max(0.35, v.scale * zoomFactor));
-          const wx = (mx - v.tx) / v.scale;
-          const wy = (my - v.ty) / v.scale;
-          return {
-            scale: nextScale,
-            tx: mx - wx * nextScale,
-            ty: my - wy * nextScale,
-          };
-        });
-      } else {
-        e.preventDefault();
-        setView((v) => ({ ...v, tx: v.tx - e.deltaX, ty: v.ty - e.deltaY }));
-      }
-    },
-    []
-  );
+  /** Pan / zoom — must use a non-passive native `wheel` listener so `preventDefault` works (browser default is passive). */
+  const onWheelNative = useCallback((e: WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const el = containerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const mx = e.clientX - r.left;
+      const my = e.clientY - r.top;
+      const zoomFactor = e.deltaY > 0 ? 0.92 : 1.08;
+      setView((v) => {
+        const nextScale = Math.min(2.5, Math.max(0.35, v.scale * zoomFactor));
+        const wx = (mx - v.tx) / v.scale;
+        const wy = (my - v.ty) / v.scale;
+        return {
+          scale: nextScale,
+          tx: mx - wx * nextScale,
+          ty: my - wy * nextScale,
+        };
+      });
+    } else {
+      e.preventDefault();
+      setView((v) => ({ ...v, tx: v.tx - e.deltaX, ty: v.ty - e.deltaY }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, [onWheelNative]);
 
   const beginWireDragAt = useCallback(
     (
@@ -358,6 +498,15 @@ export function GraphCanvas() {
             pi.fromPort
           );
         }
+        return;
+      }
+
+      const bsel = boxSelectRef.current;
+      if (bsel) {
+        const { x, y } = clientToGraph(e.clientX, e.clientY);
+        const updated: BoxSelectDrag = { ...bsel, gx1: x, gy1: y };
+        boxSelectRef.current = updated;
+        setBoxSelect(updated);
         return;
       }
 
@@ -417,7 +566,51 @@ export function GraphCanvas() {
       }
     };
 
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
+      if (boxSelectRef.current) {
+        const bs = boxSelectRef.current;
+        boxSelectRef.current = null;
+        setBoxSelect(null);
+        const backdrop = backdropRef.current;
+        if (backdrop?.hasPointerCapture(e.pointerId)) {
+          try {
+            backdrop.releasePointerCapture(e.pointerId);
+          } catch {
+            /* already released */
+          }
+        }
+        if (e.type !== 'pointercancel') {
+          const { nodes, edges, graphScope, selectedIds } = pickStateRef.current;
+          const dx = e.clientX - bs.startClientX;
+          const dy = e.clientY - bs.startClientY;
+          const tinyClient = dx * dx + dy * dy < BOX_SELECT_TINY_CLIENT_PX2;
+          const wG = Math.abs(bs.gx1 - bs.gx0);
+          const hG = Math.abs(bs.gy1 - bs.gy0);
+          const tinyGraph = wG < 3 && hG < 3;
+          if (tinyClient || tinyGraph) {
+            if (!bs.additive) dispatch({ type: 'select', id: null });
+          } else {
+            const hits = nodeIdsIntersectingGraphRect(
+              nodes,
+              edges,
+              graphScope,
+              bs.gx0,
+              bs.gy0,
+              bs.gx1,
+              bs.gy1
+            );
+            if (hits.length === 0) {
+              if (!bs.additive) dispatch({ type: 'select', id: null });
+            } else if (bs.additive) {
+              const add = hits.filter((id) => !selectedIds.includes(id));
+              dispatch({ type: 'selectMany', ids: [...selectedIds, ...add] });
+            } else {
+              dispatch({ type: 'selectMany', ids: hits });
+            }
+          }
+        }
+      }
+
       pendingInputWireRef.current = null;
       setPanDrag(null);
       setNodeDrag(null);
@@ -460,9 +653,29 @@ export function GraphCanvas() {
       if (e.button !== 0 || e.altKey) return;
       const t = e.target as HTMLElement;
       if (t.closest?.('.studio-node-card') || t.closest?.('.parameter-node-frame')) return;
-      dispatch({ type: 'select', id: null });
+      e.preventDefault();
+      const g = clientToGraph(e.clientX, e.clientY);
+      const next: BoxSelectDrag = {
+        gx0: g.x,
+        gy0: g.y,
+        gx1: g.x,
+        gy1: g.y,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        additive: e.shiftKey,
+      };
+      boxSelectRef.current = next;
+      setBoxSelect(next);
+      const backdrop = backdropRef.current;
+      if (backdrop) {
+        try {
+          backdrop.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+      }
     },
-    [startPan, dispatch]
+    [startPan, clientToGraph]
   );
 
   const worldContextMenu = useCallback(
@@ -494,9 +707,11 @@ export function GraphCanvas() {
         clientY: e.clientY,
         pasteOriginGraph,
       });
-      dispatch({ type: 'selectMany', ids: [nodeId] });
+      if (!state.selectedIds.includes(nodeId)) {
+        dispatch({ type: 'selectMany', ids: [nodeId] });
+      }
     },
-    [clientToGraph, dispatch]
+    [clientToGraph, dispatch, state.selectedIds]
   );
 
   const startDragFromPointer = useCallback(
@@ -611,14 +826,16 @@ export function GraphCanvas() {
       }
       dispatch({ type: 'select', id: nodeId, additive: false });
       let colorId: GraphWireColorId;
-      if (n.kind === 'generate') colorId = 'gray';
+      if (n.kind === 'generate') colorId = UNIVERSAL_SOCKET_COLOR_ID;
       else if (n.kind === 'groupInput') {
         const idx = fromPort === 'out' ? 0 : Number(fromPort.slice(4));
         colorId = n.outputs[idx]?.colorId ?? 'gray';
+      } else if (n.kind === 'group') {
+        colorId = groupCanvasOutputPinColorId(n, state.edges);
       } else {
         colorId = n.outputPinColor;
       }
-      const p = pinGraphPosition(n, fromPort, state.edges);
+      const p = pinGraphPosition(n, fromPort, state.edges, state.pinStyle);
       e.preventDefault();
       e.stopPropagation();
       pendingInputWireRef.current = null;
@@ -659,7 +876,7 @@ export function GraphCanvas() {
       ) {
         return;
       }
-      const p = pinGraphPosition(fromNode, incoming.from.port, state.edges);
+      const p = pinGraphPosition(fromNode, incoming.from.port, state.edges, state.pinStyle);
       e.preventDefault();
       e.stopPropagation();
       pendingInputWireRef.current = {
@@ -789,9 +1006,23 @@ export function GraphCanvas() {
         return;
       }
 
-      if (e.code === 'KeyH' && e.shiftKey && mod) {
+      if (!contextToolbarActionsSuppressed && e.code === 'KeyH' && e.shiftKey && mod) {
         e.preventDefault();
-        dispatch({ type: 'toggleNodeDisabled' });
+        dispatch(
+          state.contextToolbar
+            ? { type: 'toggleNodeDisabled', ids: contextToolbarTargetIds }
+            : { type: 'toggleNodeDisabled' }
+        );
+        return;
+      }
+      if (!contextToolbarActionsSuppressed && e.code === 'KeyM' && !mod && !e.shiftKey && !e.altKey) {
+        if (state.selectedIds.length === 0) return;
+        e.preventDefault();
+        dispatch(
+          state.contextToolbar
+            ? { type: 'toggleNodeDisabled', ids: contextToolbarTargetIds }
+            : { type: 'toggleNodeDisabled' }
+        );
         return;
       }
       if (e.code === 'KeyF' && !mod) {
@@ -809,6 +1040,9 @@ export function GraphCanvas() {
     state.graphScope,
     state.nodes,
     state.selectedIds,
+    contextToolbarActionsSuppressed,
+    contextToolbarTargetIds,
+    state.contextToolbar,
   ]);
 
   const isOutputConnected = useCallback(
@@ -829,69 +1063,51 @@ export function GraphCanvas() {
 
   return (
     <div
-      ref={containerRef}
-      className="flex-1 min-w-0"
-      tabIndex={0}
-      style={{
-        position: 'relative',
-        overflow: 'hidden',
-        background: 'var(--studio-canvas)',
-        outline: 'none',
-      }}
-      onWheel={onWheel}
+      className="workbench-graph-canvas-stack flex-col flex-1 min-h-0 flex"
+      data-node-id="73:5614"
     >
-      {state.playMode ? (
-        <div
-          style={{
-            position: 'absolute',
-            top: 12,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 20,
-            pointerEvents: 'auto',
-          }}
-        >
-          <GraphPlayModeControl
-            graphPlayActive={state.graphPlayActive}
-            onToggle={() => dispatch({ type: 'toggleGraphPlay' })}
-          />
-        </div>
-      ) : null}
-      {state.graphScope ? (
-        <div
-          className="flex-row items-center gap-sm text-sm"
-          style={{
-            position: 'absolute',
-            top: state.playMode ? 52 : 12,
-            left: 12,
-            zIndex: 21,
-            pointerEvents: 'auto',
-            padding: '6px 10px',
-            borderRadius: 8,
-            background: 'var(--studio-surface-100)',
-            border: '1px solid var(--studio-stroke)',
-            maxWidth: 480,
-          }}
-        >
-          <button
-            type="button"
-            className="text-sm underline-offset-2 hover:underline"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-            onClick={() => dispatch({ type: 'exitGroupScope' })}
-          >
-            ← Parent graph
-          </button>
-          <span className="text-muted">/</span>
-          <span className="font-medium">
-            {state.nodes.find((n) => n.id === state.graphScope && n.kind === 'group')?.title ??
-              'Group'}
-          </span>
-          <span className="text-muted text-xs">
-            Esc or double-click Group Input / Group Output to exit
-          </span>
-        </div>
-      ) : null}
+      <GraphRibbon />
       <div
+        ref={containerRef}
+        className="flex-1 min-w-0 graph-surface"
+        tabIndex={0}
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          background: 'var(--studio-canvas)',
+          outline: 'none',
+        }}
+      >
+      <GraphSelectionContextToolbar
+        open={Boolean(
+          state.contextToolbar &&
+            contextToolbarTargetIds.length > 0 &&
+            !state.graphScope
+        )}
+        selectedIds={contextToolbarTargetIds}
+        nodes={state.nodes}
+        nodeElById={nodeBoundsRefMap.current}
+        positionRootRef={containerRef}
+        playMode={state.playMode}
+        graphPlayActive={state.graphPlayActive}
+        generativeNodesEnabled={state.generativeNodesEnabled}
+        localPlayNodeIds={state.localPlayNodeIds}
+        viewLayoutKey={`${view.tx}-${view.ty}-${view.scale}-${boundsEpoch}`}
+        onUnifyExpand={() =>
+          dispatch({ type: 'unifyExpandSelection', ids: contextToolbarTargetIds })
+        }
+        onToggleMute={() =>
+          dispatch({ type: 'toggleNodeDisabled', ids: contextToolbarTargetIds })
+        }
+        onToggleSelectionPlay={() =>
+          dispatch({ type: 'toggleSelectionLocalPlay', ids: contextToolbarTargetIds })
+        }
+        onRunGenerateSelection={() =>
+          dispatch({ type: 'runGenerateSelection', ids: contextToolbarTargetIds })
+        }
+      />
+      <div
+        ref={backdropRef}
         data-graph-backdrop
         style={{
           position: 'absolute',
@@ -902,6 +1118,7 @@ export function GraphCanvas() {
         onPointerDown={backdropPointerDown}
         onContextMenu={worldContextMenu}
       >
+        <GraphCanvasUiScaleContext.Provider value={view.scale}>
         <svg
           width={WORLD_W}
           height={WORLD_H}
@@ -917,16 +1134,17 @@ export function GraphCanvas() {
           {state.edges
             .filter((edge) => edgeVisibleForGraphScope(edge, state.graphScope, state.nodes))
             .map((edge) => {
-            const d = edgePath(edge, state.nodes, state.edges);
+            const d = edgePath(edge, state.nodes, state.edges, state.pinStyle);
             if (!d) return null;
             const hex = resolveGraphPinHex(edge.colorId, state.extendedPalette);
             const wireId = `wire-${edge.id}`;
             const fromNode = state.nodes.find((n) => n.id === edge.from.nodeId);
-            const fromDisabled = Boolean(
-              fromNode && 'disabled' in fromNode && fromNode.disabled
-            );
+            const fromDisabled = Boolean(fromNode?.disabled);
+            const localPlaySet = new Set(state.localPlayNodeIds);
             const showFlow =
-              state.playMode && state.graphPlayActive && !fromDisabled;
+              state.playMode &&
+              !fromDisabled &&
+              (state.graphPlayActive || localPlaySet.has(edge.from.nodeId));
             return (
               <g key={edge.id}>
                 <path
@@ -936,7 +1154,7 @@ export function GraphCanvas() {
                   stroke={hex}
                   strokeWidth={2}
                   strokeLinecap="round"
-                  strokeOpacity={fromDisabled ? 0.5 : 1}
+                  strokeOpacity={fromDisabled ? 0.3 : 1}
                 />
                 {showFlow && (
                   <circle
@@ -972,6 +1190,16 @@ export function GraphCanvas() {
             .filter((node) => nodeVisibleForGraphScope(node.id, state.graphScope, state.nodes))
             .map((node) => {
             const selected = state.selectedIds.includes(node.id);
+            const progOutPin = (p: GraphOutPort) =>
+              progressiveOutputPinOpacity(
+                node.id,
+                p,
+                wireDrag,
+                state.progressiveConnections,
+                !wireDrag ||
+                  node.id === wireDrag.fromNodeId ||
+                  nodeHasMatchingInputPin(node, wireDrag.colorId, state.edges)
+              );
             const select = (ev: React.PointerEvent) =>
               dispatch({
                 type: 'select',
@@ -992,6 +1220,7 @@ export function GraphCanvas() {
                   node={node}
                   selected={selected}
                   progressiveCardOpacity={progressiveCardOpacity}
+                  progressiveOutputPinOpacity={progOutPin}
                   outputConnected={isOutputConnected(node.id)}
                   onSelect={select}
                   onToggleExpand={() =>
@@ -1007,6 +1236,7 @@ export function GraphCanvas() {
                     startNodeResize(node.id, edge, e)
                   }
                   onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                  onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
             }
@@ -1067,11 +1297,14 @@ export function GraphCanvas() {
                   selected={selected}
                   progressiveCardOpacity={progressiveCardOpacity}
                   progressiveInputPinMultiplier={progressiveInputPinMult}
+                  progressiveOutputPinOpacity={progOutPin}
                   inputConnected={(port) => isInputConnected(node.id, port)}
                   outputConnected={isOutputConnected(node.id)}
                   onSelect={select}
                   onToggleExpand={() =>
-                    dispatch({ type: 'toggleExpanded', id: node.id })
+                    state.contextToolbar
+                      ? dispatch({ type: 'unifyExpandSelection' })
+                      : dispatch({ type: 'toggleExpanded', id: node.id })
                   }
                   onTitleCommit={(title) =>
                     dispatch({ type: 'updateFunction', id: node.id, patch: { title } })
@@ -1106,6 +1339,8 @@ export function GraphCanvas() {
                     startNodeResize(node.id, edge, e)
                   }
                   onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                  showExpandChevron={showExpandChevron}
+                  onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
             }
@@ -1167,11 +1402,14 @@ export function GraphCanvas() {
                   selected={selected}
                   progressiveCardOpacity={progressiveCardOpacity}
                   progressiveInputPinMultiplier={progressiveInputPinMult}
+                  progressiveOutputPinOpacity={progOutPin}
                   inputConnected={(port) => isInputConnected(node.id, port)}
                   outputConnected={isOutputConnected(node.id)}
                   onSelect={select}
                   onToggleExpand={() =>
-                    dispatch({ type: 'toggleExpanded', id: node.id })
+                    state.contextToolbar
+                      ? dispatch({ type: 'unifyExpandSelection' })
+                      : dispatch({ type: 'toggleExpanded', id: node.id })
                   }
                   onTitleCommit={(title) =>
                     dispatch({ type: 'updateGroup', id: node.id, patch: { title } })
@@ -1194,6 +1432,8 @@ export function GraphCanvas() {
                   onGraphShellDoubleClick={() =>
                     dispatch({ type: 'enterGroupScope', groupId: node.id })
                   }
+                  showExpandChevron={showExpandChevron}
+                  onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
             }
@@ -1211,12 +1451,15 @@ export function GraphCanvas() {
                   node={node}
                   selected={selected}
                   progressiveCardOpacity={progressiveCardOpacity}
+                  progressiveOutputPinOpacity={progOutPin}
                   outputConnected={isOutputConnected(node.id)}
                   inputConnected={(port) => isInputConnected(node.id, port)}
                   edges={state.edges}
                   onSelect={select}
                   onToggleExpand={() =>
-                    dispatch({ type: 'toggleExpanded', id: node.id })
+                    state.contextToolbar
+                      ? dispatch({ type: 'unifyExpandSelection' })
+                      : dispatch({ type: 'toggleExpanded', id: node.id })
                   }
                   onTitleCommit={(title) =>
                     dispatch({
@@ -1260,6 +1503,8 @@ export function GraphCanvas() {
                     startNodeResize(node.id, edge, e)
                   }
                   onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                  showExpandChevron={showExpandChevron}
+                  onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
             }
@@ -1277,6 +1522,7 @@ export function GraphCanvas() {
                   node={node}
                   selected={selected}
                   progressiveCardOpacity={progressiveCardOpacity}
+                  progressiveOutputPinOpacity={progOutPin}
                   outputConnected={(port) =>
                     state.edges.some(
                       (ed) => ed.from.nodeId === node.id && ed.from.port === port
@@ -1293,6 +1539,8 @@ export function GraphCanvas() {
                   onExitSubgraph={
                     state.graphScope ? () => dispatch({ type: 'exitGroupScope' }) : undefined
                   }
+                  showExpandChevron={showExpandChevron}
+                  onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
             }
@@ -1325,6 +1573,8 @@ export function GraphCanvas() {
                   onExitSubgraph={
                     state.graphScope ? () => dispatch({ type: 'exitGroupScope' }) : undefined
                   }
+                  showExpandChevron={showExpandChevron}
+                  onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
             }
@@ -1346,7 +1596,9 @@ export function GraphCanvas() {
                 inputConnected={isInputConnected(node.id, 'in-0')}
                 onSelect={select}
                 onToggleExpand={() =>
-                  dispatch({ type: 'toggleExpanded', id: node.id })
+                  state.contextToolbar
+                    ? dispatch({ type: 'unifyExpandSelection' })
+                    : dispatch({ type: 'toggleExpanded', id: node.id })
                 }
                 onHeaderDragPointerDown={(e) => moveNodeStart(node.id, e)}
                 onInputPointerDown={(e) =>
@@ -1357,6 +1609,8 @@ export function GraphCanvas() {
                   startNodeResize(node.id, edge, e)
                 }
                 onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
+                showExpandChevron={showExpandChevron}
+                onBoundsEl={getNodeBoundsElCallback(node.id)}
               />
             );
           })}
@@ -1385,6 +1639,19 @@ export function GraphCanvas() {
             />
           </svg>
         ) : null}
+
+        {boxSelect ? (
+          <div
+            className="graph-box-select-rect"
+            style={{
+              left: Math.min(boxSelect.gx0, boxSelect.gx1),
+              top: Math.min(boxSelect.gy0, boxSelect.gy1),
+              width: Math.abs(boxSelect.gx1 - boxSelect.gx0),
+              height: Math.abs(boxSelect.gy1 - boxSelect.gy0),
+            }}
+          />
+        ) : null}
+        </GraphCanvasUiScaleContext.Provider>
       </div>
 
       <GraphNavigationGuide visible={state.showGraphGuide} />
@@ -1477,6 +1744,11 @@ export function GraphCanvas() {
             (n) => n.kind === 'group' && state.selectedIds.includes(n.id)
           )
         }
+        muteSelectionLabel={selectionMuteMenuLabel}
+        onMuteSelection={() => {
+          setContextMenu(null);
+          handleSelectionMuteMenu();
+        }}
       />
 
       <NodeContextMenu
@@ -1541,7 +1813,13 @@ export function GraphCanvas() {
           setNodeContextMenu(null);
           dispatch({ type: 'ungroupSelection' });
         }}
+        muteSelectionLabel={selectionMuteMenuLabel}
+        onMuteSelection={() => {
+          setNodeContextMenu(null);
+          handleSelectionMuteMenu();
+        }}
       />
+    </div>
     </div>
   );
 }

@@ -36,8 +36,29 @@
   --graph-pin-tooltip-bg: #ffffff;
   --graph-pin-tooltip-text: #202227;
   --graph-pin-tooltip-shadow: rgba(4, 4, 8, 0.25);
+  /**
+   * Marquee box select — Figma Node `2012:152004` "box select" (`get_design_context`):
+   * fill `highlight/highlight_400` → rgba(101,123,244,0.42); stroke `color/system/emphasis` → #335fff.
+   */
+  --graph-box-select-fill: rgba(101, 123, 244, 0.42);
+  --graph-box-select-stroke: #335fff;
+  /** Figma `bg/shift-200` / `bg/shift-300` (workbench panel tabs, graph ribbon chip). */
+  --studio-bg-shift-200: rgba(208, 217, 251, 0.08);
+  --studio-bg-shift-300: rgba(208, 217, 251, 0.12);
+  /** Workbench `384:29872` presentation overlay — `Color/ActionSoftEmphasis/Background`. */
+  --workbench-presentation-tint: rgba(51, 95, 255, 0.4);
+  /** Foundation-style scrollbar (no dedicated ScrollBar export in `@rbx/foundation-web` list — track/thumb tokens). */
+  --foundation-scrollbar-track: transparent;
+  --foundation-scrollbar-thumb: rgba(208, 217, 251, 0.28);
+  --foundation-scrollbar-thumb-hover: rgba(208, 217, 251, 0.42);
   /** Must match `GRAPH_PIN_DIAMETER_PX` in `src/graph/geometry.ts` (socket layout + wire attach). */
   --graph-pin-diameter: 9px;
+  /**
+   * Node Pin `73:5524` — idle categorical ring (stroke). Thinner than the classic 2px
+   * `--studio-surface-0` outer halo (`.graph-pin-outer-ring`) so the color band reads as a fine ring.
+   * Connected: solid fill, ring weight unused (`border-width: 0`). Per-pin hue: `--graph-pin-palette`.
+   */
+  --graph-pin-core-ring-weight: 1px;
   --studio-content-default: #d5d7dd;
   --studio-content-muted: #bcbec8;
   --studio-content-emphasis: #f7f7f8;
@@ -109,6 +130,337 @@ body.graph-app-body {
 .app-shell {
   height: 100%;
   min-height: 100vh;
+}
+
+/*
+ * App shell — Figma `384:29872` Workbench Frame + `2013:190316` inspector panel + `2009:70166` graph panel.
+ */
+.workbench-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+.workbench-frame__presentation {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px;
+  box-sizing: border-box;
+  background: linear-gradient(
+      90deg,
+      var(--workbench-presentation-tint) 0%,
+      var(--workbench-presentation-tint) 100%
+    ),
+    linear-gradient(90deg, var(--studio-canvas) 0%, var(--studio-canvas) 100%);
+}
+.workbench-frame__presentation-title {
+  margin: 0;
+  font-family: var(--alpha-font-family);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: -0.24px;
+  text-transform: uppercase;
+  color: var(--studio-content-emphasis);
+}
+.workbench-frame__presentation-footer {
+  min-height: 24px;
+}
+.workbench-frame__main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+/** Figma `384:29876` Control column — default width set in `App.tsx` (400px); horizontal resize via handles. */
+.workbench-control-column {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 72px 24px 24px;
+  min-height: 0;
+  position: relative;
+}
+.workbench-resize-handle {
+  position: absolute;
+  top: 72px;
+  bottom: 24px;
+  width: 6px;
+  z-index: 3;
+  touch-action: none;
+  cursor: col-resize;
+}
+.workbench-resize-handle--left {
+  left: -3px;
+}
+.workbench-resize-handle--right {
+  right: -3px;
+}
+.workbench-resize-handle:hover {
+  background: rgba(208, 217, 251, 0.08);
+}
+/** 1px section rules — Figma `Color/Stroke/Default` rgba(208,217,251,0.12). */
+.workbench-inspector-section-divider {
+  border-bottom: 1px solid rgba(208, 217, 251, 0.12);
+}
+/** Figma `384:29874` Media column — graph region. */
+.workbench-media-column {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 72px 24px 24px;
+}
+/** Figma `2009:70166` — surface-100 shell around graph slot. */
+.workbench-graph-legacy-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--studio-surface-100);
+  border: 1px solid var(--studio-surface-100);
+}
+.workbench-graph-slot {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--studio-surface-0);
+}
+/** Figma `2009:68781` GraphRibbonContent — `73:5614` NodeGraphCanvas header strip. */
+.workbench-graph-ribbon {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  padding: 4px;
+  background: var(--studio-surface-100);
+  border-top: 1px solid rgba(208, 217, 251, 0.12);
+  border-bottom: 1px solid rgba(208, 217, 251, 0.12);
+}
+.workbench-graph-ribbon__left,
+.workbench-graph-ribbon__center,
+.workbench-graph-ribbon__right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+.workbench-graph-ribbon__left {
+  flex: 0 0 110px;
+  min-width: 0;
+  justify-content: flex-start;
+}
+.workbench-graph-ribbon__center {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+.workbench-graph-ribbon__right {
+  flex: 0 0 110px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.workbench-graph-ribbon-chip {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 4px;
+  border-radius: var(--studio-radius);
+  background: var(--studio-bg-shift-200);
+  max-width: 110px;
+}
+.workbench-graph-ribbon-chip__label {
+  font-family: var(--alpha-font-family);
+  font-size: var(--alpha-text-bodymedium-font-size, 14px);
+  line-height: 20px;
+  color: var(--studio-content-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/** Figma `384:34248` — graph scope dropdown column width 110px. */
+.graph-ribbon-scope-slot {
+  width: 110px;
+  max-width: 110px;
+  flex-shrink: 0;
+}
+
+/*
+ * Graph scope trigger — Figma `81161:80278` ContentArea: `bg/shift-200`, min-h 24px, padding 4px,
+ * `radius` 4px; label body-medium default + chevron.
+ */
+.graph-ribbon-scope-trigger.select-trigger,
+button.graph-ribbon-scope-trigger.select-trigger {
+  width: 100%;
+  min-height: 24px;
+  padding: 4px;
+  border-radius: var(--studio-radius);
+  background: var(--studio-bg-shift-200);
+  border: 1px solid transparent;
+  font-size: var(--alpha-text-bodymedium-font-size, 14px);
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--studio-content-default);
+  gap: 4px;
+}
+
+.graph-ribbon-scope-trigger.select-trigger:hover {
+  background: rgba(208, 217, 251, 0.12);
+}
+
+.graph-ribbon-scope-trigger.select-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(208, 217, 251, 0.35);
+}
+
+.select-content--graph-ribbon-menu {
+  min-width: var(--radix-select-trigger-width, 110px);
+}
+
+/** Figma `73:5614` — graph canvas stack (ribbon + clipped surface). */
+.workbench-graph-canvas-stack {
+  min-width: 0;
+}
+
+.graph-surface {
+  /* Clips context toolbar + graph; children use absolute stacking. */
+  isolation: isolate;
+}
+
+.graph-context-toolbar {
+  position: absolute;
+  z-index: 25;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+.workbench-inspector-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--studio-surface-100);
+}
+.workbench-inspector-tabbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  width: 100%;
+  overflow: hidden;
+}
+.workbench-inspector-tabbar__tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 4px;
+  overflow: hidden;
+}
+.workbench-inspector-tabbar__actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 8px;
+}
+.workbench-inspector-tabbar__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--studio-radius);
+  background: transparent;
+  color: var(--studio-content-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: default;
+}
+.workbench-inspector-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 4px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.workbench-inspector-tab .text-label-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 6px;
+  border-radius: var(--studio-radius);
+  color: var(--studio-content-muted);
+}
+.workbench-inspector-tab--selected .text-label-small {
+  background: var(--studio-bg-shift-300);
+  color: var(--studio-content-emphasis);
+}
+.workbench-inspector-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid rgba(208, 217, 251, 0.12);
+}
+
+/* Foundation-aligned scroll chrome for inspector body (see `--foundation-scrollbar-*` in `:root`). */
+.foundation-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--foundation-scrollbar-thumb) var(--foundation-scrollbar-track);
+}
+.foundation-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.foundation-scrollbar::-webkit-scrollbar-track {
+  background: var(--foundation-scrollbar-track);
+  border-radius: 4px;
+}
+.foundation-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--foundation-scrollbar-thumb);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.foundation-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--foundation-scrollbar-thumb-hover);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .flex-row {
@@ -212,11 +564,8 @@ body.graph-app-body {
 }
 
 /*
- * Graph node frame — Figma Node `73:26702` (`get_design_context`): `Stroke/Weight` 1px +
- * `Color/Stroke/Default`; Parameter chip `73:6071` uses `stroke/default` the same way.
- * Use a real `border` (not `inset` box-shadow): inset shadows paint under descendant backgrounds,
- * so the stroke disappeared under the header/body fills.
- * With `box-sizing: border-box`, the 1px border sits inside the authored width like Figma inside stroke.
+ * Graph node frame — Figma Node `73:26702`: 1px `stroke/default` on the card edge (`NODE_CARD_BORDER`).
+ * Stroke is the real border so header/body backgrounds meet it flush (`border-box`); selection only swaps color.
  */
 .studio-node-card {
   border: 1px solid var(--studio-stroke);
@@ -227,6 +576,17 @@ body.graph-app-body {
 }
 .studio-node-card--selected {
   border-color: var(--studio-stroke-system-contrast);
+}
+
+/* Graph marquee — Figma `2012:152004` "box select"; fill/stroke via `--graph-box-select-*` in `:root`. */
+.graph-box-select-rect {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  /* Above node layer (z-index 2) and wire-drag ghost (3); still non-interactive. */
+  z-index: 4;
+  background: var(--graph-box-select-fill);
+  border: 1px solid var(--graph-box-select-stroke);
 }
 
 /* Pin color tooltip — Figma `113:20106` (inverse surface, BodySmall, TransientLow-style shadow). */
@@ -261,8 +621,8 @@ body.graph-app-body {
 .graph-pin-outer-ring-slot--clip-right {
   /*
    * Hide outer ring only on the wire/canvas side. Inset must stay tighter than a 50% bisect so
-   * the ring still paints over the node’s 1px border (selection uses `border-color` on the card).
-   * Slightly wider clip than the 1px ring so a 2px `box-shadow` ring does not leak toward the wire.
+   * the ring still paints over the node’s 1px card border (selection swaps border-color on the card).
+   * Slightly wider clip than the 1px ring so a 2px pin outer `box-shadow` ring does not leak toward the wire.
    */
   clip-path: inset(-4px 24% -4px -4px);
 }
@@ -279,6 +639,17 @@ body.graph-app-body {
 .graph-pin-core {
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: var(--graph-pin-diameter);
+  height: var(--graph-pin-diameter);
+  border-radius: 50%;
+  border: var(--graph-pin-core-ring-weight) solid var(--graph-pin-palette, currentColor);
+  background: var(--studio-surface-0);
+}
+.graph-pin-core--connected {
+  border-width: 0;
+  background: var(--graph-pin-palette);
 }
 
 .graph-pin-tooltip {
@@ -385,6 +756,105 @@ body.graph-app-body {
   object-position: center;
 }
 
+/** Figma `73:5614` ribbon center — IconButton 32×32, no floating pill chrome. */
+.graph-play-mode-control--ribbon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: var(--studio-radius);
+  background: transparent;
+  border: none;
+}
+
+.graph-play-mode-control--ribbon .graph-play-mode-control__icon-slot {
+  width: 32px;
+  height: 32px;
+}
+
+/*
+ * Selection context toolbar — Figma `2009:75048` / variables: `bg/surface-100`, `stroke/default`,
+ * `radius/medium` 8px, `ToolbarInset` + `gap/xsmall` 4px, AffixedLow-style shadow (tooltip shadow tokens).
+ * Position is `absolute` inside `.graph-surface` so it clips with the prototype frame (see earlier `.graph-context-toolbar`).
+ */
+.graph-context-toolbar__backplate {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--foundation-gap-xsmall);
+  padding: 4px;
+  min-height: 34px;
+  box-sizing: border-box;
+  border-radius: var(--studio-radius-panel);
+  background: var(--studio-surface-100);
+  border: 1px solid var(--studio-stroke);
+  box-shadow:
+    0 2px 4px 0 var(--graph-pin-tooltip-shadow),
+    0 10px 20px 0 var(--graph-pin-tooltip-shadow);
+}
+.graph-context-toolbar__btn {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: var(--studio-radius);
+  background: transparent;
+  color: var(--studio-content-emphasis);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.graph-context-toolbar__btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.graph-context-toolbar__btn:active {
+  background: rgba(0, 0, 0, 0.12);
+}
+.graph-context-toolbar__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--studio-focus-ring-color);
+}
+.graph-context-toolbar__btn:disabled {
+  cursor: default;
+}
+.graph-context-toolbar__img {
+  display: block;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  object-position: center;
+}
+
+/*
+ * GraphParameterPanel (`132:9384`) header chevron / add — strip UA focus rings (orange outline +
+ * white ring stack) while keeping a minimal keyboard affordance.
+ */
+.graph-parameter-panel-header-btn {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.graph-parameter-panel-header-btn:focus {
+  outline: none;
+  box-shadow: none;
+}
+.graph-parameter-panel-header-btn:focus:not(:focus-visible) {
+  background: transparent;
+}
+.graph-parameter-panel-header-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--studio-radius);
+}
+
 /* Parameter chip (`73:6071`): stroke ring sits under fill + pin; noodles render above in GraphCanvas. */
 .parameter-node-frame {
   box-sizing: border-box;
@@ -409,10 +879,11 @@ body.graph-app-body {
   z-index: 0;
   box-sizing: border-box;
   pointer-events: none;
-  border: 1px solid var(--studio-stroke);
+  border: none;
+  box-shadow: 0 0 0 1px var(--studio-stroke);
 }
 .parameter-node-stroke--selected {
-  border-color: var(--studio-stroke-system-contrast);
+  box-shadow: 0 0 0 1px var(--studio-stroke-system-contrast);
 }
 .parameter-node-surface {
   position: absolute;
@@ -520,7 +991,7 @@ body.graph-app-body {
 
 .foundation-web-checkbox-input:focus-visible + .foundation-web-checkbox-box {
   outline: none;
-  box-shadow: 0 0 0 2px var(--studio-focus-ring-color);
+  box-shadow: 0 0 0 1px rgba(208, 217, 251, 0.35);
 }
 
 .foundation-web-checkbox-text {
@@ -570,6 +1041,19 @@ body.graph-app-body {
 .node-property-content-area:focus-within {
   outline: none;
   box-shadow: inset 0 0 0 var(--studio-focus-ring-width) var(--studio-focus-ring-color);
+}
+
+.node-property-content-area--plain {
+  min-height: 0;
+  padding-left: 0;
+  padding-right: 0;
+  background: transparent;
+  border-radius: 0;
+  gap: 0;
+}
+
+.node-property-content-area--plain:focus-within {
+  box-shadow: none;
 }
 
 .node-property-field-input {
@@ -761,13 +1245,66 @@ body.graph-app-body {
 }
 
 /*
- * Option list: match inspector `.select-content`; floor width in `rem` so graph canvas zoom
- * (CSS transform) does not shrink the menu below readable body-small sizing.
+ * Node-property dropdown (`variant="nodeProperty"`, graph + inspector): width tracks the trigger’s
+ * on-screen size (`--radix-select-trigger-width` ← popper anchor width) so zoomed-out nodes get a
+ * proportionally small menu, not a fixed 260px slab.
+ *
+ * `--graph-node-property-dropdown-scale` is set inline from graph `view.scale` so typography and
+ * padding match the CSS-transformed trigger (portaled menu is not inside that transform).
+ *
+ * `pointer-events` + z-index: graph uses transformed layers + Radix body pointer-events; without a
+ * high stacking context and explicit `auto`, hits can fall through to the canvas/node below.
  */
 .select-content.select-content--menu-stable {
-  min-width: max(11.5rem, var(--radix-select-trigger-width, 0px));
-  font-size: var(--alpha-text-bodysmall-font-size);
-  line-height: var(--alpha-text-bodysmall-line-height);
+  box-sizing: border-box;
+  width: var(--radix-select-trigger-width, auto);
+  min-width: var(--radix-select-trigger-width, 0px);
+  max-width: var(--radix-select-trigger-width, none);
+  --graph-node-property-dropdown-scale: 1;
+  font-size: calc(
+    var(--alpha-text-bodysmall-font-size) * var(--graph-node-property-dropdown-scale, 1)
+  );
+  line-height: calc(
+    var(--alpha-text-bodysmall-line-height) * var(--graph-node-property-dropdown-scale, 1)
+  );
+  letter-spacing: calc(
+    var(--alpha-text-bodysmall-letter-spacing) * var(--graph-node-property-dropdown-scale, 1)
+  );
+  border-radius: calc(var(--studio-radius) * var(--graph-node-property-dropdown-scale, 1));
+  z-index: 2147483646;
+  isolation: isolate;
+  pointer-events: auto !important;
+}
+
+.select-content.select-content--menu-stable .select-viewport {
+  padding: calc(4px * var(--graph-node-property-dropdown-scale, 1));
+}
+
+.select-content.select-content--menu-stable .select-item {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  padding: calc(8px * var(--graph-node-property-dropdown-scale, 1))
+    calc(10px * var(--graph-node-property-dropdown-scale, 1));
+  border-radius: calc(3px * var(--graph-node-property-dropdown-scale, 1));
+}
+
+.select-content.select-content--menu-stable .select-scroll-btn {
+  height: calc(22px * var(--graph-node-property-dropdown-scale, 1));
+}
+
+.select-content.select-content--menu-stable .select-scroll-chevron svg {
+  width: calc(12px * var(--graph-node-property-dropdown-scale, 1));
+  height: calc(12px * var(--graph-node-property-dropdown-scale, 1));
+}
+
+/* Popper wrapper reads inner computed z-index once; stay above selected nodes (`z-index: 4`). */
+[data-radix-popper-content-wrapper]:has(.select-content--menu-stable) {
+  z-index: 2147483646 !important;
 }
 
 .select-viewport {
@@ -796,6 +1333,15 @@ body.graph-app-body {
   height: 22px;
   font-family: var(--alpha-font-family);
   color: var(--studio-content-muted);
+}
+
+.select-scroll-chevron {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.select-scroll-chevron--up {
+  transform: rotate(180deg);
 }
 
 .btn-studio {

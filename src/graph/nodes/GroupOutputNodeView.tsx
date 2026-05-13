@@ -1,12 +1,15 @@
+import { useCallback } from 'react';
 import {
   graphNodeWidth,
   nodeHeight,
   ROW_H,
   NODE_ROW_PIN_CENTER_Y_OFFSET,
+  functionBodyInputPinLeftLocalPx,
+  nodeRowPaddingForPinStyle,
 } from '../geometry';
 import type { GroupOutputNode } from '../types';
 import { useGraph } from '../GraphContext';
-import { resolveGraphHeaderHex } from '../pinColors';
+import { GROUP_SHELL_HEADER_WIRE_ID, resolveGraphHeaderHex } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodeShell } from '../NodeShell';
 import { NodeResizeEdges } from '../NodeResizeEdges';
@@ -26,6 +29,8 @@ type Props = {
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
   onExitSubgraph?: () => void;
+  showExpandChevron?: boolean;
+  onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
 export function GroupOutputNodeView({
@@ -41,20 +46,30 @@ export function GroupOutputNodeView({
   onResizeEdgePointerDown,
   onNodeContextMenu,
   onExitSubgraph,
+  showExpandChevron = true,
+  onBoundsEl,
 }: Props) {
   const { state: graphState } = useGraph();
   const w = graphNodeWidth(node);
   const h = nodeHeight(node);
 
+  const boundsRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      onBoundsEl?.(el);
+    },
+    [onBoundsEl]
+  );
+
   return (
     <div
       className="absolute"
+      ref={boundsRef}
       style={{
         left: node.x,
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
-        opacity: progressiveCardOpacity,
+        opacity: (node.disabled ? 0.3 : 1) * progressiveCardOpacity,
       }}
       onContextMenu={(e) => onNodeContextMenu?.(e)}
       onDoubleClick={(e) => {
@@ -64,7 +79,11 @@ export function GroupOutputNodeView({
     >
       <div style={{ position: 'relative', zIndex: 1, minHeight: h }}>
         {onResizeEdgePointerDown ? (
-          <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
+          <NodeResizeEdges
+            node={node}
+            onEdgePointerDown={onResizeEdgePointerDown}
+            pinStyle={graphState.pinStyle}
+          />
         ) : null}
         <NodeShell
           title={node.title}
@@ -76,7 +95,7 @@ export function GroupOutputNodeView({
             />
           }
           frameVariant={node.frameVariant}
-          headerFillOverride={resolveGraphHeaderHex('gray', graphState.extendedPalette)}
+          headerFillOverride={resolveGraphHeaderHex(GROUP_SHELL_HEADER_WIRE_ID, graphState.extendedPalette)}
           selected={selected}
           width={w}
           expanded
@@ -84,19 +103,21 @@ export function GroupOutputNodeView({
           headerTrailing={null}
           onHeaderDragPointerDown={onHeaderDragPointerDown}
           onBackgroundPointerDown={onSelect}
-          dimHeaderChrome={Boolean(node.disabled)}
+          dimHeaderChrome={false}
+          showExpandChevron={showExpandChevron}
         >
           <div
             style={{
               position: 'relative',
               height: ROW_H,
               ...nodeRow,
+              ...nodeRowPaddingForPinStyle(graphState.pinStyle),
             }}
           >
             <div
               style={{
                 position: 'absolute',
-                left: 0,
+                left: functionBodyInputPinLeftLocalPx(node.x, graphState.pinStyle),
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
               }}

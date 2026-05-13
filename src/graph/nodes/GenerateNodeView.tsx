@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useGraph } from '../GraphContext';
 import { foundationLayout, nodeLabelColumn, nodeRow } from '../figmaNodeTokens';
 import {
@@ -13,13 +14,17 @@ import {
   NODE_ROW_PADDING_X,
   NODE_ROW_PIN_CENTER_Y_OFFSET,
   ROW_H,
+  cardTrailingOutputRightCss,
+  functionBodyInputPinLeftLocalPx,
+  nodeRowPaddingForPinStyle,
 } from '../geometry';
-import type { GenerateNode, GraphEdge, GraphNode } from '../types';
+import type { GenerateNode, GraphEdge, GraphNode, GraphOutPort } from '../types';
 import generatePreviewUnionUrl from '../../assets/icons/generate-preview-union.svg?url';
 import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodeShell } from '../NodeShell';
 import { NodeResizeEdges } from '../NodeResizeEdges';
 import { Pin } from '../Pin';
+import { UNIVERSAL_SOCKET_COLOR_ID } from '../pinColors';
 import { Button } from '../../foundation/Button';
 import chevronCollapsedUrl from '../../assets/icons/node-header-chevron-collapsed.svg?url';
 import chevronExpandedUrl from '../../assets/icons/node-header-chevron-expanded.svg?url';
@@ -28,12 +33,13 @@ const GENERATE_HEADER_FILL = 'var(--studio-generate-header)';
 const GENERATE_BODY_FILL = 'var(--studio-generate-body)';
 /** Figma `368:23582` — `radius/small` on Node frame (`--studio-generate-node-radius`). */
 const GENERATE_CARD_RADIUS_PX = 4;
-const GENERATE_PIN_COLOR = 'gray' as const;
+const GENERATE_PIN_COLOR = UNIVERSAL_SOCKET_COLOR_ID;
 
 type Props = {
   node: GenerateNode;
   selected: boolean;
   progressiveCardOpacity?: number;
+  progressiveOutputPinOpacity?: (port: GraphOutPort) => number;
   outputConnected: boolean;
   inputConnected: (port: `in-${number}`) => boolean;
   edges: readonly GraphEdge[];
@@ -50,6 +56,8 @@ type Props = {
   onRun: () => void;
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
+  showExpandChevron?: boolean;
+  onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
 function inputLabelForPort(
@@ -68,6 +76,7 @@ export function GenerateNodeView({
   node,
   selected,
   progressiveCardOpacity = 1,
+  progressiveOutputPinOpacity,
   outputConnected,
   inputConnected,
   edges,
@@ -84,6 +93,8 @@ export function GenerateNodeView({
   onRun,
   onResizeEdgePointerDown,
   onNodeContextMenu,
+  showExpandChevron = true,
+  onBoundsEl,
 }: Props) {
   const { state } = useGraph();
   const w = graphNodeWidth(node);
@@ -92,8 +103,16 @@ export function GenerateNodeView({
   const nextFree = wired.length === 0 ? 0 : Math.max(...wired) + 1;
   const portOrder = [...wired, nextFree] as number[];
 
+  const boundsRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      onBoundsEl?.(el);
+    },
+    [onBoundsEl]
+  );
+
   const headerPin = (
     <div
+      style={{ opacity: progressiveOutputPinOpacity?.('out') ?? 1 }}
       onPointerDown={(e) => {
         e.stopPropagation();
         onOutputPointerDown(e);
@@ -111,12 +130,13 @@ export function GenerateNodeView({
   return (
     <div
       className="absolute"
+      ref={boundsRef}
       style={{
         left: node.x,
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
-        opacity: progressiveCardOpacity,
+        opacity: (node.disabled ? 0.3 : 1) * progressiveCardOpacity,
       }}
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);
@@ -128,6 +148,7 @@ export function GenerateNodeView({
             node={node}
             edges={edges}
             onEdgePointerDown={onResizeEdgePointerDown}
+            pinStyle={state.pinStyle}
           />
         ) : null}
         <NodeShell
@@ -142,8 +163,10 @@ export function GenerateNodeView({
           onToggleExpand={onToggleExpand}
           onHeaderDragPointerDown={onHeaderDragPointerDown}
           onBackgroundPointerDown={onSelect}
-          dimHeaderChrome={Boolean(node.disabled)}
+          dimHeaderChrome={false}
+          showExpandChevron={showExpandChevron}
           headerTrailing={headerPin}
+          headerTrailingRightCss={cardTrailingOutputRightCss(state.pinStyle)}
           titleContent={
             <EditableNodeTitle
               value={node.title}
@@ -314,20 +337,19 @@ export function GenerateNodeView({
               </div>
 
               <div className="flex flex-col w-full">
-                {/** Figma `368:23582` InputGroup header — `px small` row, `pl xsmall` on leading (chevron @ 12px). */}
+                {/** Figma `368:23582` InputGroup header — match Function `renderInputGroup` (pl 4, chevron, gap-sm, title). */}
                 <div
                   className="flex-row items-center gap-sm"
                   style={{
                     position: 'relative',
                     height: ROW_H,
                     boxSizing: 'border-box',
-                    paddingLeft: foundationLayout.paddingSmall,
-                    paddingRight: foundationLayout.paddingSmall,
+                    paddingLeft: 4,
+                    paddingRight: 8,
                   }}
                 >
                   <div
                     className="flex-row items-center gap-sm flex-1 min-w-0"
-                    style={{ paddingLeft: foundationLayout.paddingXSmall }}
                   >
                     <button
                       type="button"
@@ -386,15 +408,16 @@ export function GenerateNodeView({
                             position: 'relative',
                             height: ROW_H,
                             ...nodeRow,
+                            ...nodeRowPaddingForPinStyle(state.pinStyle),
                           }}
                         >
                           <div
                             style={{
                               position: 'absolute',
-                              left: 0,
+                              left: functionBodyInputPinLeftLocalPx(node.x, state.pinStyle),
                               top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                               transform: 'translate(-50%, -50%)',
-                              opacity: node.disabled && !conn ? 0.5 : 1,
+                              opacity: 1,
                             }}
                             onPointerDown={(e) => {
                               e.stopPropagation();

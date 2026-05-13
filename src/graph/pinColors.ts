@@ -1,8 +1,8 @@
 /**
  * Graph wire / pin / header colors — two modes (Inspector → Experimental → **Extended Palette**):
  *
- * - **Off (default):** Figma **DataCategorical Contrast** tokens from Node-Graph-Draft `155:13740`
- *   — e.g. Blue, Berry, Rainforest. One hex per token for header, pin, and wire (`FOUNDATION_PALETTE_HEX`).
+ * - **Off (default):** Figma **DataCategorical Contrast** (`155:13740`) plus categorical **Gray**
+ *   from `367:22748` — `Gray/Gray_700` pins/wires (`#6a6f81`), `Gray/Gray_600` headers (`#494d5a`).
  * - **On:** Legacy extended palette (Lima, Berry, …) with separate socket (`PIN_HEX`) and header
  *   (`NODE_HEADER_HEX`) ramps — Figma Node Pin `73:5524` / shell `73:5757`.
  */
@@ -33,14 +33,36 @@ export const PIN_COLOR_IDS = [
 
 export type PinColorId = (typeof PIN_COLOR_IDS)[number];
 
-export type GraphWireColorId = PinColorId | FoundationPaletteId;
-
 /** Re-export for menus / inspector when Extended Palette is off. */
 export { FOUNDATION_PALETTE_IDS, FOUNDATION_PALETTE_LABEL, type FoundationPaletteId };
 
+/** Generate-only wire/socket id — `#BCBEC8` (Figma `163:45377`). Kept distinct from categorical `gray`. */
+export const UNIVERSAL_SOCKET_COLOR_ID = 'universalSocket' as const;
+
+export type GraphWireColorId = PinColorId | FoundationPaletteId | typeof UNIVERSAL_SOCKET_COLOR_ID;
+
+/**
+ * Header chrome for {@link GroupNode} and group I/O boundary nodes only.
+ * Not user-assignable on Parameter / Function / Output / Generate (see {@link configurableGraphWireColorIds}).
+ */
+export const GROUP_SHELL_HEADER_WIRE_ID: GraphWireColorId = 'blue';
+
+/** Remove reserved shell id from configurable node pin / header colors. */
+export function forbidReservedShellWireColor(id: GraphWireColorId): GraphWireColorId {
+  return id === GROUP_SHELL_HEADER_WIRE_ID ? 'gray' : id;
+}
+
+/** Palette ids shown in Parameter / Function / Output color pickers (insert menus, inspector). */
+export function configurableGraphWireColorIds(extendedPalette: boolean): GraphWireColorId[] {
+  if (extendedPalette) {
+    return PIN_COLOR_IDS.filter((c) => c !== 'blue') as GraphWireColorId[];
+  }
+  return FOUNDATION_PALETTE_IDS.filter((c) => c !== 'blue') as GraphWireColorId[];
+}
+
 /** Extended `PinColorId` → default foundation token (used when turning Extended Palette off). */
 const PIN_TO_FOUNDATION: Record<PinColorId, FoundationPaletteId> = {
-  gray: 'ice',
+  gray: 'gray',
   green: 'green',
   magenta: 'purple',
   lima: 'green',
@@ -64,6 +86,7 @@ const FOUNDATION_TO_PIN: Record<FoundationPaletteId, PinColorId> = {
   purple: 'purple',
   rainforest: 'rainforest',
   red: 'red',
+  gray: 'gray',
 };
 
 /**
@@ -141,6 +164,8 @@ export function parsePinColorId(raw: string): PinColorId | null {
 }
 
 export function parseGraphWireColorId(raw: string): GraphWireColorId | null {
+  const t0 = raw.trim().toLowerCase();
+  if (t0 === UNIVERSAL_SOCKET_COLOR_ID) return UNIVERSAL_SOCKET_COLOR_ID;
   const pin = parsePinColorId(raw);
   if (pin) return pin;
   const t = raw.trim();
@@ -151,6 +176,7 @@ export function parseGraphWireColorId(raw: string): GraphWireColorId | null {
 }
 
 export function toPinColorId(id: GraphWireColorId): PinColorId {
+  if (id === UNIVERSAL_SOCKET_COLOR_ID) return 'gray';
   const s = String(id);
   const legacyBase = migrateLegacyFoundationTintId(s);
   if (legacyBase) return FOUNDATION_TO_PIN[legacyBase];
@@ -159,6 +185,7 @@ export function toPinColorId(id: GraphWireColorId): PinColorId {
 }
 
 export function toFoundationPaletteId(id: GraphWireColorId): FoundationPaletteId {
+  if (id === UNIVERSAL_SOCKET_COLOR_ID) return 'gray';
   const s = String(id);
   const legacyBase = migrateLegacyFoundationTintId(s);
   if (legacyBase) return legacyBase;
@@ -166,11 +193,20 @@ export function toFoundationPaletteId(id: GraphWireColorId): FoundationPaletteId
   return PIN_TO_FOUNDATION[parsePinColorId(s) ?? migrateLegacyPinColorId(s)];
 }
 
+/** Generate `universalSocket` wires still connect to categorical Gray inputs (`367:22748`). */
+export function wireColorsMatch(source: GraphWireColorId, sink: GraphWireColorId): boolean {
+  if (source === sink) return true;
+  if (source === UNIVERSAL_SOCKET_COLOR_ID && sink === 'gray') return true;
+  if (sink === UNIVERSAL_SOCKET_COLOR_ID && source === 'gray') return true;
+  return false;
+}
+
 /** Coerce any stored id to the active palette mode (call when toggling Extended Palette). */
 export function coerceGraphWireColorForPaletteMode(
   id: GraphWireColorId,
   extendedPalette: boolean
 ): GraphWireColorId {
+  if (id === UNIVERSAL_SOCKET_COLOR_ID) return UNIVERSAL_SOCKET_COLOR_ID;
   return extendedPalette ? toPinColorId(id) : toFoundationPaletteId(id);
 }
 
@@ -181,19 +217,18 @@ export function normalizeInputPinColor(
 ): GraphWireColorId {
   const s = String(raw ?? '');
   const dual = parseGraphWireColorId(s);
+  let out: GraphWireColorId;
   if (dual != null) {
-    return coerceGraphWireColorForPaletteMode(dual, extendedPalette);
+    out = coerceGraphWireColorForPaletteMode(dual, extendedPalette);
+  } else {
+    const leg = migrateLegacyPinColorId(s);
+    out = extendedPalette ? leg : PIN_TO_FOUNDATION[leg];
   }
-  const leg = migrateLegacyPinColorId(s);
-  return extendedPalette ? leg : PIN_TO_FOUNDATION[leg];
+  return forbidReservedShellWireColor(out);
 }
 
 export function resolveGraphPinHex(id: GraphWireColorId, extendedPalette: boolean): string {
-  /**
-   * `gray` wires / universal sockets — Figma `Gray/Gray_900` `#BCBEC8` (`163:45377` variable defs),
-   * same ring treatment as other graph pins (2px stroke), not categorical `ice` / extended `#6a6f81`.
-   */
-  if (toPinColorId(id) === 'gray') {
+  if (id === UNIVERSAL_SOCKET_COLOR_ID) {
     return GENERATE_UNIVERSAL_SOCKET_HEX;
   }
   if (extendedPalette) {
@@ -202,17 +237,28 @@ export function resolveGraphPinHex(id: GraphWireColorId, extendedPalette: boolea
   return FOUNDATION_PALETTE_HEX[toFoundationPaletteId(id)];
 }
 
+/** Gray_600 on node chrome (`367:22748`); other foundation hues use a single ramp token. */
+const FOUNDATION_GRAY_HEADER_HEX = '#494d5a';
+
 export function resolveGraphHeaderHex(id: GraphWireColorId, extendedPalette: boolean): string {
+  if (id === UNIVERSAL_SOCKET_COLOR_ID) {
+    return GENERATE_UNIVERSAL_SOCKET_HEX;
+  }
   if (extendedPalette) {
     return NODE_HEADER_HEX[toPinColorId(id)];
   }
-  return FOUNDATION_PALETTE_HEX[toFoundationPaletteId(id)];
+  const f = toFoundationPaletteId(id);
+  if (f === 'gray') return FOUNDATION_GRAY_HEADER_HEX;
+  return FOUNDATION_PALETTE_HEX[f];
 }
 
 export function formatGraphWireColorOption(
   id: GraphWireColorId,
   extendedPalette: boolean
 ): string {
+  if (id === UNIVERSAL_SOCKET_COLOR_ID) {
+    return 'Universal socket';
+  }
   if (extendedPalette) {
     return formatPinColorOption(toPinColorId(id));
   }

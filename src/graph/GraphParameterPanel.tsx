@@ -281,6 +281,7 @@ export function GraphParameterPanel() {
         >
           <button
             type="button"
+            className="graph-parameter-panel-header-btn"
             aria-expanded={expanded}
             onClick={() => dispatch({ type: 'toggleParameterPanelExpanded' })}
             style={{
@@ -321,6 +322,7 @@ export function GraphParameterPanel() {
           </span>
           <button
             type="button"
+            className="graph-parameter-panel-header-btn"
             onClick={() => setNewParamColorMenuOpen((o) => !o)}
             title="Add parameter"
             aria-expanded={newParamColorMenuOpen}

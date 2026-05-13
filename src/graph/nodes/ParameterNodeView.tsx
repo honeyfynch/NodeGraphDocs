@@ -1,5 +1,6 @@
+import { useCallback } from 'react';
 import clsx from 'clsx';
-import type { ParameterNode } from '../types';
+import type { GraphOutPort, ParameterNode } from '../types';
 import {
   graphNodeWidth,
   nodeHeight,
@@ -7,11 +8,10 @@ import {
   PARAMETER_CHIP_H,
   PARAMETER_RADIUS_INNER,
   PARAMETER_RADIUS_OUTER,
-  PIN_OFFSET,
+  cardTrailingOutputRightCss,
   ROW_H,
 } from '../geometry';
 import { parameterDisplayValue } from '../graphWiring';
-import { translucentFill50 } from '../disabledVisual';
 import { useGraph } from '../GraphContext';
 import { resolveGraphHeaderHex } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
@@ -26,6 +26,8 @@ type Props = {
   selected: boolean;
   /** Experimental progressive connections: whole-node dim while routing a wire (default 1). */
   progressiveCardOpacity?: number;
+  /** Dim other output pins while routing from an output (default full opacity). */
+  progressiveOutputPinOpacity?: (port: GraphOutPort) => number;
   outputConnected: boolean;
   onSelect: (e: React.PointerEvent) => void;
   onToggleExpand: () => void;
@@ -35,6 +37,7 @@ type Props = {
   onOutputPointerDown: (e: React.PointerEvent) => void;
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
+  onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
 /**
@@ -48,6 +51,7 @@ export function ParameterNodeView({
   node,
   selected,
   progressiveCardOpacity = 1,
+  progressiveOutputPinOpacity,
   outputConnected,
   onSelect,
   onToggleExpand,
@@ -57,23 +61,32 @@ export function ParameterNodeView({
   onOutputPointerDown,
   onResizeEdgePointerDown,
   onNodeContextMenu,
+  onBoundsEl,
 }: Props) {
   const { state } = useGraph();
   const bg = resolveGraphHeaderHex(node.outputPinColor, state.extendedPalette);
-  const headerFill = node.disabled ? translucentFill50(bg) : bg;
+  const headerFill = bg;
   const expanded = node.expanded;
   const w = graphNodeWidth(node);
   const h = nodeHeight(node);
 
+  const boundsRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      onBoundsEl?.(el);
+    },
+    [onBoundsEl]
+  );
+
   return (
     <div
       className="absolute"
+      ref={boundsRef}
       style={{
         left: node.x,
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
-        opacity: progressiveCardOpacity,
+        opacity: (node.disabled ? 0.3 : 1) * progressiveCardOpacity,
       }}
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);
@@ -81,7 +94,11 @@ export function ParameterNodeView({
     >
       <div style={{ position: 'relative', minHeight: h }}>
         {onResizeEdgePointerDown ? (
-          <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
+          <NodeResizeEdges
+            node={node}
+            onEdgePointerDown={onResizeEdgePointerDown}
+            pinStyle={state.pinStyle}
+          />
         ) : null}
       <div
         className="parameter-node-frame"
@@ -149,7 +166,7 @@ export function ParameterNodeView({
                 alignItems: 'stretch',
                 justifyContent: 'center',
                 pointerEvents: 'none',
-                opacity: node.disabled ? 0.5 : 1,
+                opacity: 1,
               }}
             >
               <div
@@ -176,11 +193,11 @@ export function ParameterNodeView({
               data-studio-param-pin
               style={{
                 position: 'absolute',
-                right: -PIN_OFFSET,
+                right: cardTrailingOutputRightCss(state.pinStyle),
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translateY(-50%)',
                 zIndex: 2,
-                opacity: node.disabled ? 0.5 : 1,
+                opacity: (progressiveOutputPinOpacity?.('out') ?? 1),
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -204,9 +221,7 @@ export function ParameterNodeView({
                 alignItems: 'center',
                 padding: '2px 8px',
                 boxSizing: 'border-box',
-                background: node.disabled
-                  ? translucentFill50('var(--studio-surface-200)')
-                  : 'var(--studio-surface-200)',
+                background: 'var(--studio-surface-200)',
                 borderTop: 'none',
                 borderBottomLeftRadius: PARAMETER_RADIUS_INNER,
                 borderBottomRightRadius: PARAMETER_RADIUS_INNER,

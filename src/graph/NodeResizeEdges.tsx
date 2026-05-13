@@ -1,11 +1,13 @@
 import type { CSSProperties, PointerEvent } from 'react';
 import type { GraphEdge, GraphNode } from './types';
 import {
+  GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX,
   HEADER_H,
   NODE_CARD_BORDER,
   PARAMETER_CHIP_H,
   ROW_H,
   nodeHeight,
+  type GraphPinStyleId,
 } from './geometry';
 
 type Props = {
@@ -13,6 +15,8 @@ type Props = {
   /** Required for {@link GraphNode} `generate` height (input row count from edges). */
   edges?: readonly GraphEdge[];
   onEdgePointerDown: (edge: 'left' | 'right', e: PointerEvent<HTMLDivElement>) => void;
+  /** When **orbit**, resize bands shift outward so they do not cover sockets (see `GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX`). */
+  pinStyle?: GraphPinStyleId;
 };
 
 /** Hit band thickness (px) along the node outline. */
@@ -41,11 +45,19 @@ function bindEdge(
 }
 
 /**
- * Horizontal resize targets along the node outline, excluding the header row and pin sockets
- * (function/output: body left/right only; parameter: chip edges with gaps around the output pin).
+ * Horizontal resize targets along the node outline, excluding the header row.
+ * **Orbit** pins sit outside the card; bands shift outward so they do not stack above sockets (`z-index: 4`).
+ * Parameter chip: vertical gaps around the output pin on the right.
  */
-export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) {
+export function NodeResizeEdges({
+  node,
+  edges = [],
+  onEdgePointerDown,
+  pinStyle = 'classic',
+}: Props) {
   const h = nodeHeight(node, edges);
+  const orbitOut = pinStyle === 'orbit' ? GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX : 0;
+  const bandEdge = OUTSET + ZONE + orbitOut;
 
   if (
     node.kind === 'function' ||
@@ -66,7 +78,7 @@ export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) 
           aria-hidden
           style={{
             ...zoneBase,
-            left: -(OUTSET + ZONE),
+            left: -bandEdge,
             top: bodyTop,
             width: ZONE,
             height: bodyH,
@@ -77,7 +89,7 @@ export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) 
           aria-hidden
           style={{
             ...zoneBase,
-            right: -(OUTSET + ZONE),
+            right: -bandEdge,
             top: bodyTop,
             width: ZONE,
             height: bodyH,
@@ -101,7 +113,7 @@ export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) 
       aria-hidden
       style={{
         ...zoneBase,
-        left: -(OUTSET + ZONE),
+        left: -bandEdge,
         top: 0,
         width: ZONE,
         height: h,
@@ -117,7 +129,7 @@ export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) 
         aria-hidden
         style={{
           ...zoneBase,
-          right: -(OUTSET + ZONE),
+          right: -bandEdge,
           top: 0,
           width: ZONE,
           height: topSegH,
@@ -133,7 +145,7 @@ export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) 
         aria-hidden
         style={{
           ...zoneBase,
-          right: -(OUTSET + ZONE),
+          right: -bandEdge,
           top: midTop,
           width: ZONE,
           height: botSegH,
@@ -149,7 +161,7 @@ export function NodeResizeEdges({ node, edges = [], onEdgePointerDown }: Props) 
         aria-hidden
         style={{
           ...zoneBase,
-          right: -(OUTSET + ZONE),
+          right: -bandEdge,
           top: PARAMETER_CHIP_H,
           width: ZONE,
           height: ROW_H,

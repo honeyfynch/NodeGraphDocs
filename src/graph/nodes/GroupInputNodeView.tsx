@@ -1,12 +1,14 @@
+import { useCallback } from 'react';
 import {
   graphNodeWidth,
   nodeHeight,
   ROW_H,
   NODE_ROW_PIN_CENTER_Y_OFFSET,
+  cardTrailingOutputRightCss,
 } from '../geometry';
 import type { GraphOutPort, GroupInputNode } from '../types';
 import { useGraph } from '../GraphContext';
-import { resolveGraphHeaderHex } from '../pinColors';
+import { GROUP_SHELL_HEADER_WIRE_ID, resolveGraphHeaderHex } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodeShell } from '../NodeShell';
 import { NodeResizeEdges } from '../NodeResizeEdges';
@@ -17,6 +19,7 @@ type Props = {
   node: GroupInputNode;
   selected: boolean;
   progressiveCardOpacity?: number;
+  progressiveOutputPinOpacity?: (port: GraphOutPort) => number;
   outputConnected: (port: GraphOutPort) => boolean;
   onSelect: (e: React.PointerEvent) => void;
   onTitleDragStart: (start: { clientX: number; clientY: number }) => void;
@@ -25,12 +28,15 @@ type Props = {
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
   onExitSubgraph?: () => void;
+  showExpandChevron?: boolean;
+  onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
 export function GroupInputNodeView({
   node,
   selected,
   progressiveCardOpacity = 1,
+  progressiveOutputPinOpacity,
   outputConnected,
   onSelect,
   onTitleDragStart,
@@ -39,6 +45,8 @@ export function GroupInputNodeView({
   onResizeEdgePointerDown,
   onNodeContextMenu,
   onExitSubgraph,
+  showExpandChevron = true,
+  onBoundsEl,
 }: Props) {
   const { state: graphState } = useGraph();
   const w = graphNodeWidth(node);
@@ -52,15 +60,23 @@ export function GroupInputNodeView({
         }))
       : [{ label: '—', colorId: 'gray' as const, port: 'out' as GraphOutPort }];
 
+  const boundsRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      onBoundsEl?.(el);
+    },
+    [onBoundsEl]
+  );
+
   return (
     <div
       className="absolute"
+      ref={boundsRef}
       style={{
         left: node.x,
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
-        opacity: progressiveCardOpacity,
+        opacity: (node.disabled ? 0.3 : 1) * progressiveCardOpacity,
       }}
       onContextMenu={(e) => onNodeContextMenu?.(e)}
       onDoubleClick={(e) => {
@@ -70,7 +86,11 @@ export function GroupInputNodeView({
     >
       <div style={{ position: 'relative', zIndex: 1, minHeight: h }}>
         {onResizeEdgePointerDown ? (
-          <NodeResizeEdges node={node} onEdgePointerDown={onResizeEdgePointerDown} />
+          <NodeResizeEdges
+            node={node}
+            onEdgePointerDown={onResizeEdgePointerDown}
+            pinStyle={graphState.pinStyle}
+          />
         ) : null}
         <NodeShell
           title={node.title}
@@ -82,7 +102,7 @@ export function GroupInputNodeView({
             />
           }
           frameVariant={node.frameVariant}
-          headerFillOverride={resolveGraphHeaderHex('gray', graphState.extendedPalette)}
+          headerFillOverride={resolveGraphHeaderHex(GROUP_SHELL_HEADER_WIRE_ID, graphState.extendedPalette)}
           selected={selected}
           width={w}
           expanded
@@ -90,7 +110,8 @@ export function GroupInputNodeView({
           headerTrailing={null}
           onHeaderDragPointerDown={onHeaderDragPointerDown}
           onBackgroundPointerDown={onSelect}
-          dimHeaderChrome={Boolean(node.disabled)}
+          dimHeaderChrome={false}
+          showExpandChevron={showExpandChevron}
         >
           {rowDefs.map((row, i) => (
             <div
@@ -104,9 +125,10 @@ export function GroupInputNodeView({
               <div
                 style={{
                   position: 'absolute',
-                  right: 0,
+                  right: cardTrailingOutputRightCss(graphState.pinStyle),
                   top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
-                  transform: 'translate(50%, -50%)',
+                  transform: 'translateY(-50%)',
+                  opacity: progressiveOutputPinOpacity?.(row.port) ?? 1,
                 }}
                 onPointerDown={(e) => {
                   e.stopPropagation();

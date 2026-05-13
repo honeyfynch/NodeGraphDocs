@@ -4,7 +4,7 @@ import {
   layoutFunctionInputPorts,
   nodeHeight,
 } from './geometry';
-import type { GraphWireColorId } from './pinColors';
+import { UNIVERSAL_SOCKET_COLOR_ID, type GraphWireColorId } from './pinColors';
 import type {
   FunctionSlot,
   GraphEdge,
@@ -24,6 +24,21 @@ function newId(prefix: string): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/**
+ * Wire / socket color for the parent-graph {@link GroupNode}’s header output: matches the edge into
+ * the inner {@link GroupOutputNode} (`in-0`). When nothing is connected yet, falls back to stored
+ * {@link GroupNode.outputPinColor}.
+ */
+export function groupCanvasOutputPinColorId(
+  group: GroupNode,
+  edges: readonly GraphEdge[]
+): GraphWireColorId {
+  const incoming = edges.find(
+    (e) => e.to.nodeId === group.groupOutputNodeId && e.to.port === 'in-0'
+  );
+  return incoming?.colorId ?? group.outputPinColor;
 }
 
 /** Label + pin color for an input port on a node inside a selection (for group UI). */
@@ -234,7 +249,7 @@ export function applyGroupSelection(
   } else {
     const fn = containedNodes.find((n) => n.kind === 'function' || n.kind === 'generate');
     if (fn?.kind === 'function') outColor = fn.outputPinColor;
-    else if (fn?.kind === 'generate') outColor = 'gray';
+    else if (fn?.kind === 'generate') outColor = UNIVERSAL_SOCKET_COLOR_ID;
   }
 
   const groupId = newId('n-group');
@@ -270,7 +285,7 @@ export function applyGroupSelection(
     y: minY,
     parentGroupId: groupId,
     title: 'Group Input',
-    frameVariant: 'muted',
+    frameVariant: 'standard',
     expanded: true,
     outputs: giOutputs,
   };
@@ -282,7 +297,7 @@ export function applyGroupSelection(
     y: minY,
     parentGroupId: groupId,
     title: 'Group Output',
-    frameVariant: 'muted',
+    frameVariant: 'standard',
     expanded: true,
     inputPinColor: outColor,
     rowLabel: exitBridge ? exitToTitle : 'Output',

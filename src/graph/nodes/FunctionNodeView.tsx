@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useGraph } from '../GraphContext';
 import {
   findIncomingParameterSource,
@@ -5,16 +6,20 @@ import {
 } from '../graphWiring';
 import { foundationLayout, nodeLabelColumn, nodeRow } from '../figmaNodeTokens';
 import {
+  cardTrailingOutputRightCss,
+  functionBodyInputPinLeftLocalPx,
   graphNodeWidth,
   nodeHeight,
+  nodeRowPaddingForPinStyle,
   ROW_H,
   NODE_ROW_PIN_CENTER_Y_OFFSET,
   GRAPH_PIN_DIAMETER_PX,
   layoutFunctionInputPorts,
   portsForInputGroupSlot,
 } from '../geometry';
-import type { FunctionNode, FunctionSlot, GroupNode } from '../types';
-import { resolveGraphHeaderHex } from '../pinColors';
+import type { FunctionNode, FunctionSlot, GraphOutPort, GroupNode } from '../types';
+import { groupCanvasOutputPinColorId } from '../graphGroupOps';
+import { GROUP_SHELL_HEADER_WIRE_ID, resolveGraphHeaderHex } from '../pinColors';
 import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodePropertySlotControl } from '../nodePropertyUi';
 import { NodeShell } from '../NodeShell';
@@ -32,6 +37,8 @@ type Props = {
   progressiveCardOpacity?: number;
   /** Per-input-pin multiplier when the card stays full opacity (default 1). */
   progressiveInputPinMultiplier?: (port: `in-${number}`) => number;
+  /** Progressive connections: dim other output pins while dragging a wire from an output. */
+  progressiveOutputPinOpacity?: (port: GraphOutPort) => number;
   inputConnected: (port: `in-${number}`) => boolean;
   outputConnected: boolean;
   onSelect: (e: React.PointerEvent) => void;
@@ -52,7 +59,10 @@ type Props = {
   onCollapsedInputGroupPointerUp?: (groupSlotIndex: number, e: React.PointerEvent) => void;
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
-  /** Double-click the card shell (e.g. group on parent graph) to enter a subgraph. */
+  /** When false, header chevron is hidden (context toolbar). Default true. */
+  showExpandChevron?: boolean;
+  /** Registers the outer bounds element for the context toolbar (client rect union). */
+  onBoundsEl?: (el: HTMLDivElement | null) => void;
   onGraphShellDoubleClick?: () => void;
 };
 
@@ -64,14 +74,13 @@ function childSlots(slot: FunctionSlot): FunctionSlot[] {
   return slot.inputGroupChildSlots ?? [];
 }
 
-/** Label + property column when node is disabled (input pins use {@link dimInputPinWrapper}). */
-function dimRowContent(disabled: boolean) {
-  return disabled ? 0.5 : 1;
+/** Muted nodes use outer opacity only — keep row/pin multipliers at 1. */
+function dimRowContent(_disabled: boolean) {
+  return 1;
 }
 
-/** Disconnected input pins dim with the node; connected pins stay full opacity. */
-function dimInputPinWrapper(disabled: boolean, connected: boolean) {
-  return disabled && !connected ? 0.5 : 1;
+function dimInputPinWrapper(_disabled: boolean, _connected: boolean) {
+  return 1;
 }
 
 export function FunctionNodeView({
@@ -80,6 +89,7 @@ export function FunctionNodeView({
   selected,
   progressiveCardOpacity = 1,
   progressiveInputPinMultiplier,
+  progressiveOutputPinOpacity,
   inputConnected,
   outputConnected,
   onSelect,
@@ -97,24 +107,42 @@ export function FunctionNodeView({
   onResizeEdgePointerDown,
   onNodeContextMenu,
   onGraphShellDoubleClick,
+  showExpandChevron = true,
+  onBoundsEl,
 }: Props) {
   const { state: graphState } = useGraph();
   const portLayouts = layoutFunctionInputPorts(node);
   const w = graphNodeWidth(node);
   const h = nodeHeight(node);
+  const isGroup = node.kind === 'group';
+  const headerOutputPinColorId = isGroup
+    ? groupCanvasOutputPinColorId(node, graphState.edges)
+    : node.outputPinColor;
+  const headerFillOverride = resolveGraphHeaderHex(
+    isGroup ? GROUP_SHELL_HEADER_WIRE_ID : node.outputPinColor,
+    graphState.extendedPalette
+  );
+
+  const boundsRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      onBoundsEl?.(el);
+    },
+    [onBoundsEl]
+  );
 
   const progressivePinFactor = (port: `in-${number}`) =>
     progressiveCardOpacity < 1 ? 1 : (progressiveInputPinMultiplier?.(port) ?? 1);
 
   const headerPin = (
     <div
+      style={{ opacity: progressiveOutputPinOpacity?.('out') ?? 1 }}
       onPointerDown={(e) => {
         e.stopPropagation();
         onOutputPointerDown(e);
       }}
     >
       <Pin
-        colorId={node.outputPinColor}
+        colorId={headerOutputPinColorId}
         connected={outputConnected}
         clipOuterStrokeOn="right"
       />
@@ -135,12 +163,13 @@ export function FunctionNodeView({
           position: 'relative',
           height: ROW_H,
           ...nodeRow,
+          ...nodeRowPaddingForPinStyle(graphState.pinStyle),
         }}
       >
         <div
           style={{
             position: 'absolute',
-            left: 0,
+            left: functionBodyInputPinLeftLocalPx(node.x, graphState.pinStyle),
             top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
             transform: 'translate(-50%, -50%)',
             opacity:
@@ -223,7 +252,7 @@ export function FunctionNodeView({
             <div
               style={{
                 position: 'absolute',
-                left: 0,
+                left: functionBodyInputPinLeftLocalPx(node.x, graphState.pinStyle),
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
                 width: GRAPH_PIN_DIAMETER_PX,
@@ -300,12 +329,13 @@ export function FunctionNodeView({
                     position: 'relative',
                     height: ROW_H,
                     ...nodeRow,
+                    ...nodeRowPaddingForPinStyle(graphState.pinStyle),
                   }}
                 >
                   <div
                     style={{
                       position: 'absolute',
-                      left: 0,
+                      left: functionBodyInputPinLeftLocalPx(node.x, graphState.pinStyle),
                       top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                       transform: 'translate(-50%, -50%)',
                       opacity:
@@ -366,12 +396,13 @@ export function FunctionNodeView({
   return (
     <div
       className="absolute"
+      ref={boundsRef}
       style={{
         left: node.x,
         top: node.y,
         width: w,
         zIndex: selected ? 4 : 1,
-        opacity: progressiveCardOpacity,
+        opacity: (node.disabled ? 0.3 : 1) * progressiveCardOpacity,
       }}
       onContextMenu={(e) => {
         onNodeContextMenu?.(e);
@@ -386,6 +417,7 @@ export function FunctionNodeView({
             node={node}
             edges={graphState.edges}
             onEdgePointerDown={onResizeEdgePointerDown}
+            pinStyle={graphState.pinStyle}
           />
         ) : null}
         <NodeShell
@@ -398,15 +430,17 @@ export function FunctionNodeView({
             />
           }
           frameVariant={node.frameVariant}
-          headerFillOverride={resolveGraphHeaderHex(node.outputPinColor, graphState.extendedPalette)}
+          headerFillOverride={headerFillOverride}
           selected={selected}
           width={w}
           expanded={node.expanded}
           onToggleExpand={onToggleExpand}
           headerTrailing={headerPin}
+          headerTrailingRightCss={cardTrailingOutputRightCss(graphState.pinStyle)}
           onHeaderDragPointerDown={onHeaderDragPointerDown}
           onBackgroundPointerDown={onSelect}
-          dimHeaderChrome={Boolean(node.disabled)}
+          dimHeaderChrome={false}
+          showExpandChevron={showExpandChevron}
         >
           {node.expanded ? (
             <>

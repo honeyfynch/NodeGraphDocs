@@ -24,7 +24,9 @@ import {
 import {
   PIN_COLOR_IDS,
   FOUNDATION_PALETTE_IDS,
+  UNIVERSAL_SOCKET_COLOR_ID,
   coerceGraphWireColorForPaletteMode,
+  forbidReservedShellWireColor,
   toFoundationPaletteId,
   toPinColorId,
   type GraphWireColorId,
@@ -34,6 +36,7 @@ import {
   graphNodeMinWidth,
   graphNodeWidth,
   nodeHeight,
+  type GraphPinStyleId,
 } from './geometry';
 import {
   bboxCenterOfNodes,
@@ -63,7 +66,7 @@ function defaultCrossPeersForNodeColor(
   }
   const f = toFoundationPaletteId(nodeColor);
   const others = FOUNDATION_PALETTE_IDS.filter((c) => c !== f);
-  return [others[0] ?? 'blue', others[1] ?? 'red'];
+  return [others[0] ?? 'berry', others[1] ?? 'red'];
 }
 
 /**
@@ -144,8 +147,10 @@ function migrateAllNodeEdgeColors(
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const mapC = (c: GraphWireColorId) => coerceGraphWireColorForPaletteMode(c, extendedPalette);
   const nodesOut = nodes.map((n) => {
-    if (n.kind === 'parameter') return { ...n, outputPinColor: mapC(n.outputPinColor) };
-    if (n.kind === 'output') return { ...n, inputPinColor: mapC(n.inputPinColor) };
+    if (n.kind === 'parameter')
+      return { ...n, outputPinColor: forbidReservedShellWireColor(mapC(n.outputPinColor)) };
+    if (n.kind === 'output')
+      return { ...n, inputPinColor: forbidReservedShellWireColor(mapC(n.inputPinColor)) };
     if (n.kind === 'generate') return n;
     if (n.kind === 'groupInput') {
       return {
@@ -157,18 +162,19 @@ function migrateAllNodeEdgeColors(
     if (n.kind === 'function' || n.kind === 'group') {
       return {
         ...n,
-        outputPinColor: mapC(n.outputPinColor),
+        outputPinColor: forbidReservedShellWireColor(mapC(n.outputPinColor)),
         slots: n.slots.map((s) => normalizeFunctionSlot(s, extendedPalette)),
       };
     }
     return n;
   });
   const edgesOut = edges.map((e) => {
-    const toN = nodes.find((nn) => nn.id === e.to.nodeId);
-    if (toN?.kind === 'generate') {
-      return { ...e, colorId: 'gray' as GraphWireColorId };
-    }
-    return { ...e, colorId: mapC(e.colorId) as GraphWireColorId };
+    const fromN = nodes.find((nn) => nn.id === e.from.nodeId);
+    const sid =
+      fromN?.kind === 'generate' && e.colorId === 'gray'
+        ? UNIVERSAL_SOCKET_COLOR_ID
+        : e.colorId;
+    return { ...e, colorId: mapC(sid) as GraphWireColorId };
   });
   return { nodes: nodesOut, edges: edgesOut };
 }
@@ -215,6 +221,21 @@ export type GraphState = {
   generativeNodesEnabled: boolean;
   /** When set, the canvas shows only that group's subgraph (Blender-style scoped edit). */
   graphScope: string | null;
+  /**
+   * Inspector → Experimental → Pin styling: classic (clipped outer ring), orbit / contained
+   * (full ring + 4px frame-edge anchors vs `PIN_STYLE_FRAME_ANCHOR_PX` in `geometry.ts`).
+   */
+  pinStyle: GraphPinStyleId;
+  /**
+   * When true (default), node header chevrons hide and a contextual toolbar appears above the
+   * selection (Figma `2009:75048`). When false, chevron expand/collapse stays on each node.
+   */
+  contextToolbar: boolean;
+  /**
+   * Per-node IDs whose outgoing wires show play-mode flow when graph play is off and Play mode is on.
+   * Cleared when graph-level play becomes active.
+   */
+  localPlayNodeIds: string[];
 };
 
 function defaultSlot(i: number, extendedPalette: boolean): FunctionSlot {
@@ -273,8 +294,12 @@ const initialState: GraphState = {
       title: 'Function',
       frameVariant: 'standard',
       slotCount: 3,
-      slots: defaultFunctionSlotsForNode('berry', ['rainforest', 'orange'], false),
-      outputPinColor: 'berry',
+      slots: defaultFunctionSlotsForNode(
+        'gray',
+        defaultCrossPeersForNodeColor('gray', false),
+        false
+      ),
+      outputPinColor: 'gray',
       expanded: true,
     },
     {
@@ -285,8 +310,12 @@ const initialState: GraphState = {
       title: 'Function',
       frameVariant: 'standard',
       slotCount: 3,
-      slots: defaultFunctionSlotsForNode('green', ['berry', 'orange'], false),
-      outputPinColor: 'green',
+      slots: defaultFunctionSlotsForNode(
+        'gray',
+        defaultCrossPeersForNodeColor('gray', false),
+        false
+      ),
+      outputPinColor: 'gray',
       expanded: true,
     },
     {
@@ -297,8 +326,12 @@ const initialState: GraphState = {
       title: 'Function',
       frameVariant: 'standard',
       slotCount: 3,
-      slots: defaultFunctionSlotsForNode('orange', ['berry', 'green'], false),
-      outputPinColor: 'orange',
+      slots: defaultFunctionSlotsForNode(
+        'gray',
+        defaultCrossPeersForNodeColor('gray', false),
+        false
+      ),
+      outputPinColor: 'gray',
       expanded: true,
     },
     {
@@ -308,7 +341,7 @@ const initialState: GraphState = {
       y: 200,
       title: 'Output',
       frameVariant: 'muted',
-      inputPinColor: 'berry',
+      inputPinColor: 'gray',
       expanded: true,
     },
   ],
@@ -316,7 +349,7 @@ const initialState: GraphState = {
     {
       id: 'e1',
       from: { nodeId: 'n-param', port: 'out' },
-      to: { nodeId: 'n-fn', port: 'in-2' },
+      to: { nodeId: 'n-fn', port: 'in-1' },
       colorId: 'berry',
     },
   ],
@@ -332,6 +365,9 @@ const initialState: GraphState = {
   extendedPalette: false,
   generativeNodesEnabled: true,
   graphScope: null,
+  pinStyle: 'orbit',
+  contextToolbar: true,
+  localPlayNodeIds: [],
 };
 
 type Action =
@@ -387,8 +423,27 @@ type Action =
       patch: Partial<FunctionSlot>;
     }
   | { type: 'toggleExpanded'; id: string }
-  /** Canvas ⌘⇧H / Ctrl⇧H: flip `disabled` on every currently selected node. */
-  | { type: 'toggleNodeDisabled' }
+  /**
+   * Canvas ⌘⇧H / Ctrl⇧H or **M**: set every affected node’s `disabled` (mute) to the same value —
+   * opposite of the first id’s current `disabled` (id list order). When `ids` is omitted, uses
+   * {@link GraphState.selectedIds}.
+   */
+  | { type: 'toggleNodeDisabled'; ids?: readonly string[] }
+  /** Set `disabled` on all selected nodes that support it (context menu / toolbar). */
+  | { type: 'setSelectionMuted'; muted: boolean }
+  /**
+   * Expand/collapse all affected nodes with `expanded` to match the inverse of the first id’s state.
+   * When `ids` is omitted, uses {@link GraphState.selectedIds}.
+   */
+  | { type: 'unifyExpandSelection'; ids?: readonly string[] }
+  /**
+   * Toggle selection-scoped play (outgoing wire flow) for the given ids; disabled while graph play is active.
+   * When `ids` is omitted, uses {@link GraphState.selectedIds}.
+   */
+  | { type: 'toggleSelectionLocalPlay'; ids?: readonly string[] }
+  /** Advance every Generate node in `ids` (or full selection when omitted) from prompt → output (toolbar Run). */
+  | { type: 'runGenerateSelection'; ids?: readonly string[] }
+  | { type: 'setContextToolbar'; value: boolean }
   | { type: 'copySelection' }
   | { type: 'cutSelection' }
   | { type: 'pasteClipboard'; center: { x: number; y: number } }
@@ -411,6 +466,7 @@ type Action =
   /** Extended palette (Lima, Berry, …). Off = Figma DataCategorical tokens (default). */
   | { type: 'setExtendedPalette'; value: boolean }
   | { type: 'setProgressiveConnections'; value: boolean }
+  | { type: 'setPinStyle'; value: GraphPinStyleId }
   | { type: 'setPlayMode'; value: boolean }
   | { type: 'toggleGraphPlay' }
   /** Horizontal resize from canvas edge handles (`width` clamped; optional `x` when resizing from the left). */
@@ -569,14 +625,94 @@ function reducer(state: GraphState, action: Action): GraphState {
     }
     case 'setProgressiveConnections':
       return { ...state, progressiveConnections: action.value };
+    case 'setPinStyle':
+      return { ...state, pinStyle: action.value };
     case 'setPlayMode':
       return {
         ...state,
         playMode: action.value,
         graphPlayActive: action.value ? state.graphPlayActive : false,
+        localPlayNodeIds: action.value ? state.localPlayNodeIds : [],
       };
-    case 'toggleGraphPlay':
-      return { ...state, graphPlayActive: !state.graphPlayActive };
+    case 'toggleGraphPlay': {
+      const next = !state.graphPlayActive;
+      return {
+        ...state,
+        graphPlayActive: next,
+        localPlayNodeIds: next ? [] : state.localPlayNodeIds,
+      };
+    }
+    case 'setContextToolbar':
+      return { ...state, contextToolbar: action.value };
+    case 'unifyExpandSelection': {
+      const ids =
+        action.ids && action.ids.length > 0 ? [...action.ids] : [...state.selectedIds];
+      if (ids.length === 0) return state;
+      const first = state.nodes.find((n) => n.id === ids[0]);
+      if (!first || !('expanded' in first)) return state;
+      const targetExpanded = !first.expanded;
+      const idSet = new Set(ids);
+      return {
+        ...state,
+        nodes: state.nodes.map((n) =>
+          idSet.has(n.id) && 'expanded' in n ? { ...n, expanded: targetExpanded } : n
+        ),
+      };
+    }
+    case 'setSelectionMuted': {
+      const idSet = new Set(state.selectedIds);
+      if (idSet.size === 0) return state;
+      return {
+        ...state,
+        nodes: state.nodes.map((n) =>
+          idSet.has(n.id) ? { ...n, disabled: action.muted } : n
+        ),
+      };
+    }
+    case 'toggleNodeDisabled': {
+      const ids =
+        action.ids && action.ids.length > 0 ? [...action.ids] : [...state.selectedIds];
+      if (ids.length === 0) return state;
+      const first = state.nodes.find((n) => n.id === ids[0]);
+      if (!first) return state;
+      const targetDisabled = !Boolean(first.disabled);
+      const idSet = new Set(ids);
+      return {
+        ...state,
+        nodes: state.nodes.map((n) => {
+          if (!idSet.has(n.id)) return n;
+          return { ...n, disabled: targetDisabled };
+        }),
+      };
+    }
+    case 'toggleSelectionLocalPlay': {
+      const ids =
+        action.ids && action.ids.length > 0 ? [...action.ids] : [...state.selectedIds];
+      if (!state.playMode || state.graphPlayActive || ids.length === 0) {
+        return state;
+      }
+      const first = ids[0]!;
+      const set = new Set(state.localPlayNodeIds);
+      const firstActive = set.has(first);
+      for (const id of ids) {
+        if (firstActive) set.delete(id);
+        else set.add(id);
+      }
+      return { ...state, localPlayNodeIds: [...set] };
+    }
+    case 'runGenerateSelection': {
+      const idSet = new Set(
+        action.ids && action.ids.length > 0 ? action.ids : state.selectedIds
+      );
+      return {
+        ...state,
+        nodes: state.nodes.map((n) => {
+          if (n.kind !== 'generate' || !idSet.has(n.id)) return n;
+          if (n.generativePhase !== 'prompt') return n;
+          return { ...n, generativePhase: 'output' as const };
+        }),
+      };
+    }
     case 'enterGroupScope': {
       const g = state.nodes.find(
         (n) => n.id === action.groupId && n.kind === 'group'
@@ -632,7 +768,7 @@ function reducer(state: GraphState, action: Action): GraphState {
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
           : `n-${Date.now()}`;
-      const color = action.outputPinColor;
+      const color = forbidReservedShellWireColor(action.outputPinColor);
       const peers = defaultCrossPeersForNodeColor(color, state.extendedPalette);
       const node: FunctionNode = {
         kind: 'function',
@@ -663,7 +799,7 @@ function reducer(state: GraphState, action: Action): GraphState {
       if (prev.kind === 'group' || prev.kind === 'groupInput' || prev.kind === 'groupOutput') {
         return state;
       }
-      const color = action.outputPinColor;
+      const color = forbidReservedShellWireColor(action.outputPinColor);
       const peers = defaultCrossPeersForNodeColor(color, state.extendedPalette);
       const base = {
         id: prev.id,
@@ -714,12 +850,11 @@ function reducer(state: GraphState, action: Action): GraphState {
           parameterValue = cloneSrc.parameterValue ?? 'Value';
         }
       }
-      const color: GraphWireColorId =
+      const color: GraphWireColorId = forbidReservedShellWireColor(
         cloneSrc != null
           ? cloneSrc.outputPinColor
-          : (action.outputPinColor ??
-              firstParam?.outputPinColor ??
-              'berry');
+          : (action.outputPinColor ?? firstParam?.outputPinColor ?? 'berry')
+      );
       const node: ParameterNode = {
         kind: 'parameter',
         id: newId,
@@ -756,19 +891,14 @@ function reducer(state: GraphState, action: Action): GraphState {
           action.edge.to.port
         );
       if (taken) return state;
-      const toN = state.nodes.find((n) => n.id === action.edge.to.nodeId);
-      const edge =
-        toN?.kind === 'generate'
-          ? { ...action.edge, colorId: 'gray' as GraphWireColorId }
-          : action.edge;
-      return { ...state, edges: [...state.edges, edge] };
+      return { ...state, edges: [...state.edges, action.edge] };
     }
     case 'removeEdge':
       return { ...state, edges: state.edges.filter((e) => e.id !== action.id) };
     case 'updateParameter': {
       const { id, patch } = action;
       if (patch.outputPinColor !== undefined) {
-        const c = patch.outputPinColor;
+        const c = forbidReservedShellWireColor(patch.outputPinColor);
         const { outputPinColor: _oc, ...rest } = patch;
         const paramIds = new Set(
           state.nodes.filter((n) => n.kind === 'parameter').map((n) => n.id)
@@ -790,13 +920,20 @@ function reducer(state: GraphState, action: Action): GraphState {
         ),
       };
     }
-    case 'updateOutput':
+    case 'updateOutput': {
+      const { id, patch } = action;
       return {
         ...state,
-        nodes: state.nodes.map((n) =>
-          n.kind === 'output' && n.id === action.id ? { ...n, ...action.patch } : n
-        ),
+        nodes: state.nodes.map((n) => {
+          if (n.kind !== 'output' || n.id !== id) return n;
+          const p = { ...patch };
+          if (p.inputPinColor !== undefined) {
+            p.inputPinColor = forbidReservedShellWireColor(p.inputPinColor);
+          }
+          return { ...n, ...p };
+        }),
       };
+    }
     case 'updateGenerate':
       return {
         ...state,
@@ -813,7 +950,8 @@ function reducer(state: GraphState, action: Action): GraphState {
           const p = action.patch;
           if (p.title !== undefined) next.title = p.title;
           if (p.frameVariant !== undefined) next.frameVariant = p.frameVariant;
-          if (p.outputPinColor !== undefined) next.outputPinColor = p.outputPinColor;
+          if (p.outputPinColor !== undefined)
+            next.outputPinColor = forbidReservedShellWireColor(p.outputPinColor);
           if (p.slotCount !== undefined) {
             const c = Math.max(1, Math.min(12, p.slotCount));
             next.slotCount = c;
@@ -872,19 +1010,6 @@ function reducer(state: GraphState, action: Action): GraphState {
           n.id === action.id ? { ...n, expanded: !n.expanded } : n
         ),
       };
-    case 'toggleNodeDisabled': {
-      const ids = state.selectedIds;
-      if (ids.length === 0) return state;
-      const idSet = new Set(ids);
-      return {
-        ...state,
-        nodes: state.nodes.map((n) => {
-          if (!idSet.has(n.id)) return n;
-          if (!('disabled' in n)) return n;
-          return { ...n, disabled: !n.disabled };
-        }),
-      };
-    }
     case 'copySelection': {
       const clip = buildClipboardFromSelection(
         state.nodes,
@@ -1092,6 +1217,7 @@ function reducer(state: GraphState, action: Action): GraphState {
             state.extendedPalette
           );
         }
+        sharedPinColor = forbidReservedShellWireColor(sharedPinColor);
         replacement = {
           kind: 'parameter',
           ...base,
@@ -1110,6 +1236,7 @@ function reducer(state: GraphState, action: Action): GraphState {
         } else {
           outColor = node.outputPinColor;
         }
+        outColor = forbidReservedShellWireColor(outColor);
         const peers = defaultCrossPeersForNodeColor(outColor, state.extendedPalette);
         replacement = {
           kind: 'function',
@@ -1135,7 +1262,11 @@ function reducer(state: GraphState, action: Action): GraphState {
       } else if (nextKind === 'generate') {
         edges = state.edges
           .filter((e) => e.to.nodeId !== id)
-          .map((e) => (e.from.nodeId === id ? { ...e, colorId: 'gray' as GraphWireColorId } : e));
+          .map((e) =>
+            e.from.nodeId === id
+              ? { ...e, colorId: UNIVERSAL_SOCKET_COLOR_ID as GraphWireColorId }
+              : e
+          );
       } else if (nextKind === 'function' && node.kind === 'generate') {
         const fn = replacement as FunctionNode;
         edges = state.edges

@@ -36,6 +36,11 @@ type Props = {
   headerLeading?: ReactNode;
   /** Extra controls on the right of the title (e.g. collapsed parameter output pin). */
   headerTrailing?: ReactNode;
+  /**
+   * CSS `right` (px) for the header trailing pin wrapper — negative extends past the header’s inner
+   * right edge (default `-PIN_OFFSET` / classic).
+   */
+  headerTrailingRightCss?: number;
   /** Body when expanded. */
   children: ReactNode;
   /** Body when collapsed (optional extra strip below the header). */
@@ -47,6 +52,11 @@ type Props = {
    * use `opacity: 0.5`.
    */
   dimHeaderChrome?: boolean;
+  /**
+   * When false, header expand/collapse chevron is omitted (context toolbar handles expand).
+   * Default true.
+   */
+  showExpandChevron?: boolean;
 };
 
 export function NodeShell({
@@ -62,11 +72,13 @@ export function NodeShell({
   onToggleExpand,
   headerLeading,
   headerTrailing,
+  headerTrailingRightCss = -PIN_OFFSET,
   children,
   collapsedBody,
   onHeaderDragPointerDown,
   onBackgroundPointerDown,
   dimHeaderChrome,
+  showExpandChevron = true,
 }: Props) {
   const bodyContent = expanded ? children : collapsedBody;
   const showBody =
@@ -96,7 +108,15 @@ export function NodeShell({
         position: 'relative',
       }}
       onPointerDown={(e) => {
-        if ((e.target as HTMLElement).closest?.('[data-studio-header]')) return;
+        const t = e.target as HTMLElement;
+        if (t.closest?.('[data-studio-header]')) return;
+        /*
+         * Radix Select trigger + node property shells live in the body, not the header. Without
+         * these guards, pointerdown bubbles here and runs `onBackgroundPointerDown` (node select),
+         * which races Radix and breaks opening/picking dropdown options on the graph.
+         */
+        if (t.closest?.('.select-root-wrap')) return;
+        if (t.closest?.('.node-property-content-area')) return;
         onBackgroundPointerDown?.(e);
       }}
     >
@@ -111,10 +131,11 @@ export function NodeShell({
           height: HEADER_H,
           borderRadius: showBody ? `${r}px ${r}px 0 0` : r,
           boxSizing: 'border-box',
-          paddingLeft: 4,
+          paddingLeft: showExpandChevron ? 4 : 8,
           paddingRight: headerTrailing != null ? 14 : 8,
         }}
       >
+        {showExpandChevron ? (
         <button
           type="button"
           className="studio-node-chevron"
@@ -147,6 +168,7 @@ export function NodeShell({
             draggable={false}
           />
         </button>
+        ) : null}
         {headerLeading ? (
           <div
             className="shrink-0 flex-row items-center"
@@ -175,7 +197,7 @@ export function NodeShell({
           <div
             style={{
               position: 'absolute',
-              right: -PIN_OFFSET,
+              right: headerTrailingRightCss,
               top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
               transform: 'translateY(-50%)',
               zIndex: 2,
