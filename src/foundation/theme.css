@@ -87,6 +87,11 @@
   --foundation-padding-medium: 12px;
   --foundation-content-gap: 4px;
   --foundation-content-min-height: 24px;
+  /**
+   * Foundation **Size / XSmall** — control row frame height (Guide `133:7964` menu rows, Button
+   * Standard XSmall `163:39937`, `.NodeProperty` ContentArea minHeight). Same px as content min height.
+   */
+  --foundation-size-xsmall: var(--foundation-content-min-height);
   --foundation-gap-numeric-cells: 6px;
   --foundation-gap-number-range-inner: 2px;
   --foundation-label-col-width: 96px;
@@ -251,7 +256,8 @@ body.graph-app-body {
   flex-direction: row;
   align-items: center;
   gap: 0;
-  padding: 4px;
+  /* 12px from the left ribbon edge to the Graph scope column; keeps right column at 4px inset. */
+  padding: 4px 4px 4px 12px;
   background: var(--studio-surface-100);
   border-top: 1px solid rgba(208, 217, 251, 0.12);
   border-bottom: 1px solid rgba(208, 217, 251, 0.12);
@@ -337,7 +343,9 @@ button.graph-ribbon-scope-trigger.select-trigger {
 }
 
 .select-content--graph-ribbon-menu {
+  width: max-content;
   min-width: var(--radix-select-trigger-width, 110px);
+  max-width: min(95vw, 24rem);
 }
 
 /** Figma `73:5614` — graph canvas stack (ribbon + clipped surface). */
@@ -1245,21 +1253,19 @@ button.graph-ribbon-scope-trigger.select-trigger {
 }
 
 /*
- * Node-property dropdown (`variant="nodeProperty"`, graph + inspector): width tracks the trigger’s
- * on-screen size (`--radix-select-trigger-width` ← popper anchor width) so zoomed-out nodes get a
- * proportionally small menu, not a fixed 260px slab.
- *
- * `--graph-node-property-dropdown-scale` is set inline from graph `view.scale` so typography and
- * padding match the CSS-transformed trigger (portaled menu is not inside that transform).
+ * Node-property dropdown (`variant="nodeProperty"`, graph + inspector): at least as wide as the
+ * trigger (`--radix-select-trigger-width`); width grows with option text (`max-content`) so labels
+ * are not clipped. `--graph-node-property-dropdown-scale` matches graph zoom to the trigger.
  *
  * `pointer-events` + z-index: graph uses transformed layers + Radix body pointer-events; without a
  * high stacking context and explicit `auto`, hits can fall through to the canvas/node below.
  */
 .select-content.select-content--menu-stable {
   box-sizing: border-box;
-  width: var(--radix-select-trigger-width, auto);
+  width: max-content;
   min-width: var(--radix-select-trigger-width, 0px);
-  max-width: var(--radix-select-trigger-width, none);
+  max-width: min(95vw, 40rem);
+  overflow: visible;
   --graph-node-property-dropdown-scale: 1;
   font-size: calc(
     var(--alpha-text-bodysmall-font-size) * var(--graph-node-property-dropdown-scale, 1)
@@ -1281,16 +1287,23 @@ button.graph-ribbon-scope-trigger.select-trigger {
 }
 
 .select-content.select-content--menu-stable .select-item {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: min-content;
   white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
   font-size: inherit;
   line-height: inherit;
   letter-spacing: inherit;
-  padding: calc(8px * var(--graph-node-property-dropdown-scale, 1))
-    calc(10px * var(--graph-node-property-dropdown-scale, 1));
-  border-radius: calc(3px * var(--graph-node-property-dropdown-scale, 1));
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-height: calc(var(--foundation-size-xsmall) * var(--graph-node-property-dropdown-scale, 1));
+  height: calc(var(--foundation-size-xsmall) * var(--graph-node-property-dropdown-scale, 1));
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: calc(var(--foundation-padding-medium) * var(--graph-node-property-dropdown-scale, 1));
+  padding-right: calc(var(--foundation-padding-medium) * var(--graph-node-property-dropdown-scale, 1));
+  border-radius: calc(var(--studio-radius) * var(--graph-node-property-dropdown-scale, 1));
 }
 
 .select-content.select-content--menu-stable .select-scroll-btn {
@@ -1312,11 +1325,17 @@ button.graph-ribbon-scope-trigger.select-trigger {
 }
 
 .select-item {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-height: var(--foundation-size-xsmall);
+  height: var(--foundation-size-xsmall);
   font-family: var(--alpha-font-family);
   font-size: var(--alpha-text-bodysmall-font-size);
   line-height: var(--alpha-text-bodysmall-line-height);
-  padding: 8px 10px;
-  border-radius: 3px;
+  letter-spacing: var(--alpha-text-bodysmall-letter-spacing);
+  padding: 0 var(--foundation-padding-medium);
+  border-radius: var(--studio-radius);
   cursor: pointer;
   color: var(--studio-content-emphasis);
   outline: none;

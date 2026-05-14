@@ -132,6 +132,21 @@ export const PIN_STYLE_FRAME_ANCHOR_PX = 4;
 export const NODE_SHELL_HEADER_PADDING_LEFT_PX = 4;
 /** Chevron hit target width — must match `NodeShell` `.studio-node-chevron`. */
 export const NODE_SHELL_HEADER_CHEVRON_W_PX = 24;
+/** Radix `.select-trigger-icon` width on node-property dropdowns — must match `theme.css`. */
+export const NODE_PROPERTY_SELECT_ICON_W_PX = 12;
+/**
+ * Right-aligned expand chevron: `position: absolute; right` (px) so the 12px glyph centers on
+ * `.select-trigger--node-property` chevrons (`.NodeRow` `paddingSmall` 8px + trigger `paddingXSmall` 4px +
+ * half select icon − half expand hit).
+ */
+export const NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX =
+  8 +
+  4 +
+  NODE_PROPERTY_SELECT_ICON_W_PX / 2 -
+  NODE_SHELL_HEADER_CHEVRON_W_PX / 2;
+/** Title `paddingRight` so labels truncate before the positioned right expand chevron. */
+export const NODE_GRAPH_RIGHT_EXPAND_TITLE_PAD_RIGHT_PX =
+  NODE_SHELL_HEADER_CHEVRON_W_PX + NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX;
 /** `gap-sm` between header chevron and title (`theme.css` / NodeShell `gap-sm`). */
 export const NODE_SHELL_HEADER_CHEVRON_TITLE_GAP_PX = 8;
 
@@ -160,6 +175,33 @@ export const NODE_ROW_LABEL_TEXT_INSET_FROM_ROW_PADDING_PX = 4;
  */
 export const NODE_ROW_CONTAINED_ROW_PADDING_LEFT_PX =
   NODE_HEADER_TITLE_TEXT_X_FROM_CARD_INNER - NODE_ROW_LABEL_TEXT_INSET_FROM_ROW_PADDING_PX;
+
+/**
+ * Horizontal distance from the **card inner left** to property-row label **text** start: `.NodeRow`
+ * `paddingLeft` + `nodeLabelColumn.paddingLeft` (classic/orbit: 8+4; contained: {@link NODE_ROW_CONTAINED_ROW_PADDING_LEFT_PX}+4).
+ */
+export function nodeRowPropertyLabelTextStartFromCardInnerLeftPx(
+  pinStyle: GraphPinStyleId
+): number {
+  const rowPadLeft =
+    pinStyle === 'contained' ? NODE_ROW_CONTAINED_ROW_PADDING_LEFT_PX : 8;
+  return rowPadLeft + NODE_ROW_LABEL_TEXT_INSET_FROM_ROW_PADDING_PX;
+}
+
+/**
+ * Extra `padding-left` on the node header title row when the expand chevron is right-aligned, so the
+ * title lines up with `.NodeRow` label text. `headerContentLeftPadPx` is NodeShell’s header `paddingLeft`
+ * (4 with leading chevron, 8 when the chevron is trailing-only).
+ */
+export function nodeHeaderTitleExtraPadLeftWhenRightChevron(
+  pinStyle: GraphPinStyleId,
+  headerContentLeftPadPx: number
+): number {
+  return Math.max(
+    0,
+    nodeRowPropertyLabelTextStartFromCardInnerLeftPx(pinStyle) - headerContentLeftPadPx
+  );
+}
 
 /**
  * Output-node body row `paddingLeft` when **contained** (no `nodeLabelColumn` pad; span starts at row pad).
@@ -306,12 +348,18 @@ export const GRAPH_PIN_DIAMETER_PX = 9;
 /** Half of {@link GRAPH_PIN_DIAMETER_PX} — wire endpoints, flow dot, layout math. */
 export const NODE_INPUT_PIN_OUTER_R = GRAPH_PIN_DIAMETER_PX / 2;
 
+/** Horizontal resize hit bands in {@link NodeResizeEdges} — below {@link GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX}. */
+export const GRAPH_NODE_RESIZE_EDGE_Z_INDEX = 4;
 /**
- * Extra outward shift for {@link NodeResizeEdges} when pin style is **orbit**: sockets sit outside the
- * card while resize bands use `z-index: 4` above the shell, so bands must clear socket hit targets.
+ * Orbit sockets sit past the card edge in the same horizontal band as resize targets — stack pin
+ * hit wrappers above resize so wiring wins where they overlap.
  */
-export const GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX =
-  PIN_STYLE_FRAME_ANCHOR_PX + GRAPH_PIN_DIAMETER_PX;
+export const GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX = 5;
+
+/** Merge into pin wrapper `style` when sockets must paint above {@link GRAPH_NODE_RESIZE_EDGE_Z_INDEX}. */
+export function graphOrbitPinHitStackStyle(pinStyle: GraphPinStyleId): { zIndex: number } | Record<string, never> {
+  return pinStyle === 'orbit' ? { zIndex: GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX } : {};
+}
 
 /**
  * CSS `right` (px) for header / card-trailing output pin — tuned so pin center matches

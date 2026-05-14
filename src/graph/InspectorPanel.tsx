@@ -784,6 +784,23 @@ export function InspectorPanel() {
         ) : (
           <div className="p-md flex-col gap-sm">
             <NodePropertyFieldShell variant="plain">
+              <Field label="Pin styling">
+                <Dropdown
+                  variant="nodeProperty"
+                  value={state.pinStyle}
+                  onChange={(v) => {
+                    if (isGraphPinStyleId(v)) {
+                      dispatch({ type: 'setPinStyle', value: v });
+                    }
+                  }}
+                >
+                  <DropdownItem value="classic">Classic</DropdownItem>
+                  <DropdownItem value="orbit">Orbit</DropdownItem>
+                  <DropdownItem value="contained">Contained</DropdownItem>
+                </Dropdown>
+              </Field>
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell variant="plain">
               <Checkbox
                 label="Show guide"
                 checked={state.showGraphGuide}
@@ -810,22 +827,15 @@ export function InspectorPanel() {
                 }
               />
             </NodePropertyFieldShell>
-            <NodePropertyFieldShell>
-              <Field label="Pin styling">
-                <Dropdown
-                  variant="nodeProperty"
-                  value={state.pinStyle}
-                  onChange={(v) => {
-                    if (isGraphPinStyleId(v)) {
-                      dispatch({ type: 'setPinStyle', value: v });
-                    }
-                  }}
-                >
-                  <DropdownItem value="classic">Classic</DropdownItem>
-                  <DropdownItem value="orbit">Orbit</DropdownItem>
-                  <DropdownItem value="contained">Contained</DropdownItem>
-                </Dropdown>
-              </Field>
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
+                label="Right-aligned Chevron"
+                hint="When off, expand/collapse chevrons stay on the left of node headers and input groups. When on (default), chevrons align to the right of the header row. Node header chevrons still hide when Context Toolbar is on."
+                checked={state.rightAlignedChevron}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setRightAlignedChevron', value })
+                }
+              />
             </NodePropertyFieldShell>
             <NodePropertyFieldShell variant="plain">
               <Checkbox

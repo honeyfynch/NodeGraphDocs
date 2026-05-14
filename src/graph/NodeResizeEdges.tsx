@@ -1,13 +1,12 @@
 import type { CSSProperties, PointerEvent } from 'react';
 import type { GraphEdge, GraphNode } from './types';
 import {
-  GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX,
+  GRAPH_NODE_RESIZE_EDGE_Z_INDEX,
   HEADER_H,
   NODE_CARD_BORDER,
   PARAMETER_CHIP_H,
   ROW_H,
   nodeHeight,
-  type GraphPinStyleId,
 } from './geometry';
 
 type Props = {
@@ -15,8 +14,6 @@ type Props = {
   /** Required for {@link GraphNode} `generate` height (input row count from edges). */
   edges?: readonly GraphEdge[];
   onEdgePointerDown: (edge: 'left' | 'right', e: PointerEvent<HTMLDivElement>) => void;
-  /** When **orbit**, resize bands shift outward so they do not cover sockets (see `GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX`). */
-  pinStyle?: GraphPinStyleId;
 };
 
 /** Hit band thickness (px) along the node outline. */
@@ -26,7 +23,7 @@ const OUTSET = 6;
 
 const zoneBase: CSSProperties = {
   position: 'absolute',
-  zIndex: 4,
+  zIndex: GRAPH_NODE_RESIZE_EDGE_Z_INDEX,
   cursor: 'ew-resize',
   touchAction: 'none',
   boxSizing: 'border-box',
@@ -46,18 +43,17 @@ function bindEdge(
 
 /**
  * Horizontal resize targets along the node outline, excluding the header row.
- * **Orbit** pins sit outside the card; bands shift outward so they do not stack above sockets (`z-index: 4`).
+ * **Orbit** pins can overlap this band horizontally; pin wrappers use {@link GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX}
+ * so sockets stay clickable (see `graphOrbitPinHitStackStyle` in `geometry.ts`).
  * Parameter chip: vertical gaps around the output pin on the right.
  */
 export function NodeResizeEdges({
   node,
   edges = [],
   onEdgePointerDown,
-  pinStyle = 'classic',
 }: Props) {
   const h = nodeHeight(node, edges);
-  const orbitOut = pinStyle === 'orbit' ? GRAPH_ORBIT_RESIZE_EDGE_OUTSHIFT_PX : 0;
-  const bandEdge = OUTSET + ZONE + orbitOut;
+  const bandEdge = OUTSET + ZONE;
 
   if (
     node.kind === 'function' ||

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nodeIdsIntersectingGraphRect } from './graphBoxSelect';
 import { viewToFrameNodes } from './graphFrameSelection';
 import { graphInsertNodeSubmenuRows } from './graphInsertNodeMenu';
@@ -226,7 +226,7 @@ function idsForContextToolbarActions(
 }
 
 export function GraphCanvas() {
-  const { state, dispatch, connectEdge } = useGraph();
+  const { state, dispatch, connectEdge, pushUndoSnapshot, undo, redo } = useGraph();
   const insertNodeColorRows = useMemo(
     () => graphInsertNodeSubmenuRows(state.extendedPalette),
     [state.extendedPalette]
@@ -270,6 +270,29 @@ export function GraphCanvas() {
   nodeDragRef.current = nodeDrag;
   const resizeDragRef = useRef(resizeDrag);
   resizeDragRef.current = resizeDrag;
+  const moveUndoSnapshotDoneRef = useRef(false);
+  const resizeUndoSnapshotDoneRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!nodeDrag) {
+      moveUndoSnapshotDoneRef.current = false;
+      return;
+    }
+    if (moveUndoSnapshotDoneRef.current) return;
+    moveUndoSnapshotDoneRef.current = true;
+    pushUndoSnapshot();
+  }, [nodeDrag, pushUndoSnapshot]);
+
+  useLayoutEffect(() => {
+    if (!resizeDrag) {
+      resizeUndoSnapshotDoneRef.current = false;
+      return;
+    }
+    if (resizeUndoSnapshotDoneRef.current) return;
+    resizeUndoSnapshotDoneRef.current = true;
+    pushUndoSnapshot();
+  }, [resizeDrag, pushUndoSnapshot]);
+
   const viewRef = useRef(view);
   viewRef.current = view;
 
@@ -963,6 +986,21 @@ export function GraphCanvas() {
         dispatch({ type: 'pasteClipboard', center: c });
         return;
       }
+      if (mod && e.code === 'KeyZ') {
+        if (
+          wireDragRef.current ||
+          nodeDragRef.current ||
+          resizeDragRef.current ||
+          pendingInputWireRef.current ||
+          boxSelectRef.current
+        ) {
+          return;
+        }
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
       if (mod && e.code === 'KeyD') {
         e.preventDefault();
         dispatch({ type: 'duplicateSelection' });
@@ -1035,6 +1073,7 @@ export function GraphCanvas() {
   }, [
     dispatch,
     graphViewCenter,
+    redo,
     runFrameSelection,
     state.selectedIds.length,
     state.graphScope,
@@ -1043,6 +1082,7 @@ export function GraphCanvas() {
     contextToolbarActionsSuppressed,
     contextToolbarTargetIds,
     state.contextToolbar,
+    undo,
   ]);
 
   const isOutputConnected = useCallback(
@@ -1053,6 +1093,15 @@ export function GraphCanvas() {
           (ed.from.port === 'out' || /^out-\d+$/.test(ed.from.port))
       ),
     [state.edges]
+  );
+
+  /** While a ghost wire is active from this output, show the pin as connected until drop completes. */
+  const isWireDragFromOutput = useCallback(
+    (nodeId: string, port: GraphOutPort) =>
+      wireDrag != null &&
+      wireDrag.fromNodeId === nodeId &&
+      wireDrag.fromPort === port,
+    [wireDrag]
   );
 
   const isInputConnected = useCallback(
@@ -1221,7 +1270,9 @@ export function GraphCanvas() {
                   selected={selected}
                   progressiveCardOpacity={progressiveCardOpacity}
                   progressiveOutputPinOpacity={progOutPin}
-                  outputConnected={isOutputConnected(node.id)}
+                  outputConnected={
+                    isOutputConnected(node.id) || isWireDragFromOutput(node.id, 'out')
+                  }
                   onSelect={select}
                   onToggleExpand={() =>
                     dispatch({ type: 'toggleExpanded', id: node.id })
@@ -1299,7 +1350,9 @@ export function GraphCanvas() {
                   progressiveInputPinMultiplier={progressiveInputPinMult}
                   progressiveOutputPinOpacity={progOutPin}
                   inputConnected={(port) => isInputConnected(node.id, port)}
-                  outputConnected={isOutputConnected(node.id)}
+                  outputConnected={
+                    isOutputConnected(node.id) || isWireDragFromOutput(node.id, 'out')
+                  }
                   onSelect={select}
                   onToggleExpand={() =>
                     state.contextToolbar
@@ -1340,6 +1393,7 @@ export function GraphCanvas() {
                   }
                   onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
                   showExpandChevron={showExpandChevron}
+                  rightAlignedChevron={state.rightAlignedChevron}
                   onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
@@ -1404,7 +1458,9 @@ export function GraphCanvas() {
                   progressiveInputPinMultiplier={progressiveInputPinMult}
                   progressiveOutputPinOpacity={progOutPin}
                   inputConnected={(port) => isInputConnected(node.id, port)}
-                  outputConnected={isOutputConnected(node.id)}
+                  outputConnected={
+                    isOutputConnected(node.id) || isWireDragFromOutput(node.id, 'out')
+                  }
                   onSelect={select}
                   onToggleExpand={() =>
                     state.contextToolbar
@@ -1433,6 +1489,7 @@ export function GraphCanvas() {
                     dispatch({ type: 'enterGroupScope', groupId: node.id })
                   }
                   showExpandChevron={showExpandChevron}
+                  rightAlignedChevron={state.rightAlignedChevron}
                   onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
@@ -1452,7 +1509,9 @@ export function GraphCanvas() {
                   selected={selected}
                   progressiveCardOpacity={progressiveCardOpacity}
                   progressiveOutputPinOpacity={progOutPin}
-                  outputConnected={isOutputConnected(node.id)}
+                  outputConnected={
+                    isOutputConnected(node.id) || isWireDragFromOutput(node.id, 'out')
+                  }
                   inputConnected={(port) => isInputConnected(node.id, port)}
                   edges={state.edges}
                   onSelect={select}
@@ -1504,6 +1563,7 @@ export function GraphCanvas() {
                   }
                   onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
                   showExpandChevron={showExpandChevron}
+                  rightAlignedChevron={state.rightAlignedChevron}
                   onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
@@ -1526,7 +1586,7 @@ export function GraphCanvas() {
                   outputConnected={(port) =>
                     state.edges.some(
                       (ed) => ed.from.nodeId === node.id && ed.from.port === port
-                    )
+                    ) || isWireDragFromOutput(node.id, port)
                   }
                   onSelect={select}
                   onTitleDragStart={(c) => startDragFromPointer(node.id, c)}
@@ -1540,6 +1600,7 @@ export function GraphCanvas() {
                     state.graphScope ? () => dispatch({ type: 'exitGroupScope' }) : undefined
                   }
                   showExpandChevron={showExpandChevron}
+                  rightAlignedChevron={state.rightAlignedChevron}
                   onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
@@ -1574,6 +1635,7 @@ export function GraphCanvas() {
                     state.graphScope ? () => dispatch({ type: 'exitGroupScope' }) : undefined
                   }
                   showExpandChevron={showExpandChevron}
+                  rightAlignedChevron={state.rightAlignedChevron}
                   onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
@@ -1610,6 +1672,7 @@ export function GraphCanvas() {
                 }
                 onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
                 showExpandChevron={showExpandChevron}
+                rightAlignedChevron={state.rightAlignedChevron}
                 onBoundsEl={getNodeBoundsElCallback(node.id)}
               />
             );

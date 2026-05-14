@@ -1,7 +1,16 @@
 import clsx from 'clsx';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { FrameVariant } from './types';
-import { HEADER_H, NODE_ROW_PIN_CENTER_Y_OFFSET, PIN_OFFSET } from './geometry';
+import type { GraphPinStyleId } from './geometry';
+import {
+  HEADER_H,
+  NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX,
+  NODE_GRAPH_RIGHT_EXPAND_TITLE_PAD_RIGHT_PX,
+  NODE_ROW_PIN_CENTER_Y_OFFSET,
+  NODE_SHELL_HEADER_PADDING_LEFT_PX,
+  PIN_OFFSET,
+  nodeHeaderTitleExtraPadLeftWhenRightChevron,
+} from './geometry';
 import { translucentFill50 } from './disabledVisual';
 import chevronCollapsedUrl from '../assets/icons/node-header-chevron-collapsed.svg?url';
 import chevronExpandedUrl from '../assets/icons/node-header-chevron-expanded.svg?url';
@@ -41,6 +50,11 @@ type Props = {
    * right edge (default `-PIN_OFFSET` / classic).
    */
   headerTrailingRightCss?: number;
+  /**
+   * z-index for the header trailing pin slot (default `2`). Orbit pins overlap horizontal resize bands
+   * (`z-index` 4) — pass {@link GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX} from `geometry.ts` when using orbit.
+   */
+  headerTrailingZIndex?: number;
   /** Body when expanded. */
   children: ReactNode;
   /** Body when collapsed (optional extra strip below the header). */
@@ -57,6 +71,17 @@ type Props = {
    * Default true.
    */
   showExpandChevron?: boolean;
+  /**
+   * When true (default), expand/collapse chevron sits on the trailing side of the header (before the
+   * absolute output pin). When false, chevron stays on the leading edge. Ignored when
+   * `showExpandChevron` is false.
+   */
+  rightAlignedChevron?: boolean;
+  /**
+   * Pin styling for row padding contract — when {@link rightAlignedChevron} is true, title text is
+   * inset to align with `.NodeRow` property labels.
+   */
+  pinStyle?: GraphPinStyleId;
 };
 
 export function NodeShell({
@@ -73,12 +98,15 @@ export function NodeShell({
   headerLeading,
   headerTrailing,
   headerTrailingRightCss = -PIN_OFFSET,
+  headerTrailingZIndex = 2,
   children,
   collapsedBody,
   onHeaderDragPointerDown,
   onBackgroundPointerDown,
   dimHeaderChrome,
   showExpandChevron = true,
+  rightAlignedChevron = true,
+  pinStyle = 'classic',
 }: Props) {
   const bodyContent = expanded ? children : collapsedBody;
   const showBody =
@@ -94,6 +122,61 @@ export function NodeShell({
     dimHeaderChrome && bodyFillBase ? translucentFill50(bodyFillBase) : bodyFillBase;
   const headerChromeOpacity = dimHeaderChrome ? 0.5 : 1;
   const r = cardBorderRadius;
+  const showLeftChevron = showExpandChevron && !rightAlignedChevron;
+  const showRightChevron = showExpandChevron && rightAlignedChevron;
+  const headerContentLeftPadPx = showLeftChevron
+    ? NODE_SHELL_HEADER_PADDING_LEFT_PX
+    : 8;
+  const titleExtraPadLeftWhenRightChevron = showRightChevron
+    ? nodeHeaderTitleExtraPadLeftWhenRightChevron(pinStyle, headerContentLeftPadPx)
+    : 0;
+  const headerPadRight = headerTrailing != null ? 14 : 8;
+
+  const chevronFlexStyle: CSSProperties = {
+    flexShrink: 0,
+    width: 24,
+    height: 24,
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: headerChromeOpacity,
+  };
+
+  const chevronAbsoluteStyle: CSSProperties = {
+    ...chevronFlexStyle,
+    position: 'absolute',
+    right: NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    zIndex: 3,
+  };
+
+  const chevronButton = (style: CSSProperties) => (
+    <button
+      type="button"
+      className="studio-node-chevron"
+      aria-expanded={expanded}
+      aria-label={expanded ? 'Collapse node' : 'Expand node'}
+      style={style}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleExpand();
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <img
+        src={expanded ? chevronExpandedUrl : chevronCollapsedUrl}
+        width={12}
+        height={12}
+        alt=""
+        draggable={false}
+      />
+    </button>
+  );
 
   return (
     <div
@@ -131,44 +214,11 @@ export function NodeShell({
           height: HEADER_H,
           borderRadius: showBody ? `${r}px ${r}px 0 0` : r,
           boxSizing: 'border-box',
-          paddingLeft: showExpandChevron ? 4 : 8,
-          paddingRight: headerTrailing != null ? 14 : 8,
+          paddingLeft: showLeftChevron ? NODE_SHELL_HEADER_PADDING_LEFT_PX : 8,
+          paddingRight: headerPadRight,
         }}
       >
-        {showExpandChevron ? (
-        <button
-          type="button"
-          className="studio-node-chevron"
-          aria-expanded={expanded}
-          aria-label={expanded ? 'Collapse node' : 'Expand node'}
-          style={{
-            flexShrink: 0,
-            width: 24,
-            height: 24,
-            padding: 0,
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: headerChromeOpacity,
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleExpand();
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <img
-            src={expanded ? chevronExpandedUrl : chevronCollapsedUrl}
-            width={12}
-            height={12}
-            alt=""
-            draggable={false}
-          />
-        </button>
-        ) : null}
+        {showLeftChevron ? chevronButton(chevronFlexStyle) : null}
         {headerLeading ? (
           <div
             className="shrink-0 flex-row items-center"
@@ -182,7 +232,12 @@ export function NodeShell({
           style={{
             cursor: 'grab',
             minHeight: HEADER_H,
-            paddingRight: headerTrailing != null ? 4 : 0,
+            paddingLeft: titleExtraPadLeftWhenRightChevron,
+            paddingRight: showRightChevron
+              ? NODE_GRAPH_RIGHT_EXPAND_TITLE_PAD_RIGHT_PX
+              : headerTrailing != null
+                ? 4
+                : 0,
             opacity: headerChromeOpacity,
           }}
           onPointerDown={(e) => {
@@ -193,6 +248,7 @@ export function NodeShell({
         >
           {titleContent ?? <span className="font-semibold truncate">{title}</span>}
         </div>
+        {showRightChevron ? chevronButton(chevronAbsoluteStyle) : null}
         {headerTrailing ? (
           <div
             style={{
@@ -200,7 +256,7 @@ export function NodeShell({
               right: headerTrailingRightCss,
               top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
               transform: 'translateY(-50%)',
-              zIndex: 2,
+              zIndex: headerTrailingZIndex,
               opacity: headerChromeOpacity,
             }}
           >

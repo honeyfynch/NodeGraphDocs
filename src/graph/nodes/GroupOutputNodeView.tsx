@@ -6,6 +6,7 @@ import {
   NODE_ROW_PIN_CENTER_Y_OFFSET,
   functionBodyInputPinLeftLocalPx,
   nodeRowPaddingForPinStyle,
+  graphOrbitPinHitStackStyle,
 } from '../geometry';
 import type { GroupOutputNode } from '../types';
 import { useGraph } from '../GraphContext';
@@ -30,6 +31,7 @@ type Props = {
   onNodeContextMenu?: (e: React.MouseEvent) => void;
   onExitSubgraph?: () => void;
   showExpandChevron?: boolean;
+  rightAlignedChevron?: boolean;
   onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
@@ -47,6 +49,7 @@ export function GroupOutputNodeView({
   onNodeContextMenu,
   onExitSubgraph,
   showExpandChevron = true,
+  rightAlignedChevron = true,
   onBoundsEl,
 }: Props) {
   const { state: graphState } = useGraph();
@@ -82,7 +85,6 @@ export function GroupOutputNodeView({
           <NodeResizeEdges
             node={node}
             onEdgePointerDown={onResizeEdgePointerDown}
-            pinStyle={graphState.pinStyle}
           />
         ) : null}
         <NodeShell
@@ -105,6 +107,8 @@ export function GroupOutputNodeView({
           onBackgroundPointerDown={onSelect}
           dimHeaderChrome={false}
           showExpandChevron={showExpandChevron}
+          rightAlignedChevron={rightAlignedChevron}
+          pinStyle={graphState.pinStyle}
         >
           <div
             style={{
@@ -120,6 +124,7 @@ export function GroupOutputNodeView({
                 left: functionBodyInputPinLeftLocalPx(node.x, graphState.pinStyle),
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
+                ...graphOrbitPinHitStackStyle(graphState.pinStyle),
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();

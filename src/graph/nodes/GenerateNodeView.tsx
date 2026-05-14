@@ -10,7 +10,12 @@ import {
   generateOutputPreviewStackHeight,
   generateWiredInIndices,
   graphNodeWidth,
+  graphOrbitPinHitStackStyle,
+  GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX,
   nodeHeight,
+  NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX,
+  NODE_GRAPH_RIGHT_EXPAND_TITLE_PAD_RIGHT_PX,
+  nodeHeaderTitleExtraPadLeftWhenRightChevron,
   NODE_ROW_PADDING_X,
   NODE_ROW_PIN_CENTER_Y_OFFSET,
   ROW_H,
@@ -57,6 +62,8 @@ type Props = {
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
   showExpandChevron?: boolean;
+  /** When true (default), node header + Generate input-group chevron align trailing. */
+  rightAlignedChevron?: boolean;
   onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
@@ -94,6 +101,7 @@ export function GenerateNodeView({
   onResizeEdgePointerDown,
   onNodeContextMenu,
   showExpandChevron = true,
+  rightAlignedChevron = true,
   onBoundsEl,
 }: Props) {
   const { state } = useGraph();
@@ -112,7 +120,10 @@ export function GenerateNodeView({
 
   const headerPin = (
     <div
-      style={{ opacity: progressiveOutputPinOpacity?.('out') ?? 1 }}
+      style={{
+        opacity: progressiveOutputPinOpacity?.('out') ?? 1,
+        ...graphOrbitPinHitStackStyle(state.pinStyle),
+      }}
       onPointerDown={(e) => {
         e.stopPropagation();
         onOutputPointerDown(e);
@@ -148,7 +159,6 @@ export function GenerateNodeView({
             node={node}
             edges={edges}
             onEdgePointerDown={onResizeEdgePointerDown}
-            pinStyle={state.pinStyle}
           />
         ) : null}
         <NodeShell
@@ -165,8 +175,13 @@ export function GenerateNodeView({
           onBackgroundPointerDown={onSelect}
           dimHeaderChrome={false}
           showExpandChevron={showExpandChevron}
+          rightAlignedChevron={rightAlignedChevron}
+          pinStyle={state.pinStyle}
           headerTrailing={headerPin}
           headerTrailingRightCss={cardTrailingOutputRightCss(state.pinStyle)}
+          headerTrailingZIndex={
+            state.pinStyle === 'orbit' ? GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX : 2
+          }
           titleContent={
             <EditableNodeTitle
               value={node.title}
@@ -337,26 +352,86 @@ export function GenerateNodeView({
               </div>
 
               <div className="flex flex-col w-full">
-                {/** Figma `368:23582` InputGroup header — match Function `renderInputGroup` (pl 4, chevron, gap-sm, title). */}
+                {/** Figma `368:23582` InputGroup header — match Function `renderInputGroup` chevron placement. */}
                 <div
                   className="flex-row items-center gap-sm"
                   style={{
                     position: 'relative',
                     height: ROW_H,
                     boxSizing: 'border-box',
-                    paddingLeft: 4,
+                    paddingLeft: rightAlignedChevron ? 8 : 4,
                     paddingRight: 8,
                   }}
                 >
                   <div
                     className="flex-row items-center gap-sm flex-1 min-w-0"
+                    style={{
+                      paddingLeft: rightAlignedChevron
+                        ? nodeHeaderTitleExtraPadLeftWhenRightChevron(state.pinStyle, 8)
+                        : 0,
+                      paddingRight: rightAlignedChevron
+                        ? NODE_GRAPH_RIGHT_EXPAND_TITLE_PAD_RIGHT_PX
+                        : 0,
+                    }}
                   >
+                    {!rightAlignedChevron ? (
+                      <button
+                        type="button"
+                        className="studio-node-chevron shrink-0"
+                        aria-expanded={node.inputGroupExpanded}
+                        aria-label={node.inputGroupExpanded ? 'Collapse inputs' : 'Expand inputs'}
+                        style={{
+                          flexShrink: 0,
+                          width: 24,
+                          height: 24,
+                          padding: 0,
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleInputGroup();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                      >
+                        <img
+                          src={node.inputGroupExpanded ? chevronExpandedUrl : chevronCollapsedUrl}
+                          width={12}
+                          height={12}
+                          alt=""
+                          draggable={false}
+                        />
+                      </button>
+                    ) : null}
+                    <div className="flex-1 min-w-0 flex-row items-center text-sm">
+                      <span
+                        className="truncate"
+                        style={{
+                          lineHeight: 'var(--alpha-text-bodysmall-line-height)',
+                          color: 'var(--studio-content-default)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        Inputs
+                      </span>
+                    </div>
+                  </div>
+                  {rightAlignedChevron ? (
                     <button
                       type="button"
                       className="studio-node-chevron shrink-0"
                       aria-expanded={node.inputGroupExpanded}
                       aria-label={node.inputGroupExpanded ? 'Collapse inputs' : 'Expand inputs'}
                       style={{
+                        position: 'absolute',
+                        right: NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        zIndex: 3,
                         flexShrink: 0,
                         width: 24,
                         height: 24,
@@ -382,19 +457,7 @@ export function GenerateNodeView({
                         draggable={false}
                       />
                     </button>
-                    <div className="flex-1 min-w-0 flex-row items-center text-sm">
-                      <span
-                        className="truncate"
-                        style={{
-                          lineHeight: 'var(--alpha-text-bodysmall-line-height)',
-                          color: 'var(--studio-content-default)',
-                          fontWeight: 700,
-                        }}
-                      >
-                        Inputs
-                      </span>
-                    </div>
-                  </div>
+                  ) : null}
                 </div>
                 {node.inputGroupExpanded ? (
                   <div className="flex flex-col w-full">
@@ -418,6 +481,7 @@ export function GenerateNodeView({
                               top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                               transform: 'translate(-50%, -50%)',
                               opacity: 1,
+                              ...graphOrbitPinHitStackStyle(state.pinStyle),
                             }}
                             onPointerDown={(e) => {
                               e.stopPropagation();

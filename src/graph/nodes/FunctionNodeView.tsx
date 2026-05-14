@@ -8,7 +8,12 @@ import { foundationLayout, nodeLabelColumn, nodeRow } from '../figmaNodeTokens';
 import {
   cardTrailingOutputRightCss,
   functionBodyInputPinLeftLocalPx,
+  graphOrbitPinHitStackStyle,
+  GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX,
   graphNodeWidth,
+  NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX,
+  NODE_GRAPH_RIGHT_EXPAND_TITLE_PAD_RIGHT_PX,
+  nodeHeaderTitleExtraPadLeftWhenRightChevron,
   nodeHeight,
   nodeRowPaddingForPinStyle,
   ROW_H,
@@ -61,6 +66,11 @@ type Props = {
   onNodeContextMenu?: (e: React.MouseEvent) => void;
   /** When false, header chevron is hidden (context toolbar). Default true. */
   showExpandChevron?: boolean;
+  /**
+   * When true (default), input-group and node header chevrons sit on the trailing side.
+   * When false, chevrons stay on the leading edge.
+   */
+  rightAlignedChevron?: boolean;
   /** Registers the outer bounds element for the context toolbar (client rect union). */
   onBoundsEl?: (el: HTMLDivElement | null) => void;
   onGraphShellDoubleClick?: () => void;
@@ -108,6 +118,7 @@ export function FunctionNodeView({
   onNodeContextMenu,
   onGraphShellDoubleClick,
   showExpandChevron = true,
+  rightAlignedChevron = true,
   onBoundsEl,
 }: Props) {
   const { state: graphState } = useGraph();
@@ -135,7 +146,10 @@ export function FunctionNodeView({
 
   const headerPin = (
     <div
-      style={{ opacity: progressiveOutputPinOpacity?.('out') ?? 1 }}
+      style={{
+        opacity: progressiveOutputPinOpacity?.('out') ?? 1,
+        ...graphOrbitPinHitStackStyle(graphState.pinStyle),
+      }}
       onPointerDown={(e) => {
         e.stopPropagation();
         onOutputPointerDown(e);
@@ -174,6 +188,7 @@ export function FunctionNodeView({
             transform: 'translate(-50%, -50%)',
             opacity:
               dimInputPinWrapper(Boolean(node.disabled), conn) * progressivePinFactor(port),
+            ...graphOrbitPinHitStackStyle(graphState.pinStyle),
           }}
           onPointerDown={(e) => {
             e.stopPropagation();
@@ -244,7 +259,7 @@ export function FunctionNodeView({
             position: 'relative',
             height: ROW_H,
             boxSizing: 'border-box',
-            paddingLeft: 4,
+            paddingLeft: rightAlignedChevron ? 8 : 4,
             paddingRight: 8,
           }}
         >
@@ -259,6 +274,7 @@ export function FunctionNodeView({
                 height: GRAPH_PIN_DIAMETER_PX,
                 opacity: 0,
                 touchAction: 'none',
+                ...graphOrbitPinHitStackStyle(graphState.pinStyle),
               }}
               aria-hidden
               onPointerDown={(e) => {
@@ -273,14 +289,71 @@ export function FunctionNodeView({
           ) : null}
           <div
             className="flex-row items-center gap-sm flex-1 min-w-0"
-            style={{ opacity: dimRowContent(Boolean(node.disabled)) }}
+            style={{
+              opacity: dimRowContent(Boolean(node.disabled)),
+              paddingLeft: rightAlignedChevron
+                ? nodeHeaderTitleExtraPadLeftWhenRightChevron(graphState.pinStyle, 8)
+                : 0,
+              paddingRight: rightAlignedChevron
+                ? NODE_GRAPH_RIGHT_EXPAND_TITLE_PAD_RIGHT_PX
+                : 0,
+            }}
           >
+            {!rightAlignedChevron ? (
+              <button
+                type="button"
+                className="studio-node-chevron"
+                aria-expanded={expanded}
+                aria-label={expanded ? 'Collapse inputs' : 'Expand inputs'}
+                style={{
+                  flexShrink: 0,
+                  width: 24,
+                  height: 24,
+                  padding: 0,
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (canvasReadOnly) return;
+                  onSlotPatch(slotIndex, { inputGroupExpanded: !expanded });
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <img
+                  src={expanded ? chevronExpandedUrl : chevronCollapsedUrl}
+                  width={12}
+                  height={12}
+                  alt=""
+                  draggable={false}
+                />
+              </button>
+            ) : null}
+            <div className="flex-1 min-w-0 flex-row items-center text-sm text-muted">
+              <span
+                className="truncate"
+                style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
+              >
+                {slot.label}
+              </span>
+            </div>
+          </div>
+          {rightAlignedChevron ? (
             <button
               type="button"
               className="studio-node-chevron"
               aria-expanded={expanded}
               aria-label={expanded ? 'Collapse inputs' : 'Expand inputs'}
               style={{
+                position: 'absolute',
+                right: NODE_GRAPH_RIGHT_EXPAND_CHEVRON_BUTTON_RIGHT_PX,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                zIndex: 3,
                 flexShrink: 0,
                 width: 24,
                 height: 24,
@@ -307,15 +380,7 @@ export function FunctionNodeView({
                 draggable={false}
               />
             </button>
-            <div className="flex-1 min-w-0 flex-row items-center text-sm text-muted">
-              <span
-                className="truncate"
-                style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
-              >
-                {slot.label}
-              </span>
-            </div>
-          </div>
+          ) : null}
         </div>
         {expanded
           ? children.map((child, childIndex) => {
@@ -341,6 +406,7 @@ export function FunctionNodeView({
                       opacity:
                         dimInputPinWrapper(Boolean(node.disabled), childConn) *
                         progressivePinFactor(port),
+                      ...graphOrbitPinHitStackStyle(graphState.pinStyle),
                     }}
                     onPointerDown={(e) => {
                       e.stopPropagation();
@@ -417,7 +483,6 @@ export function FunctionNodeView({
             node={node}
             edges={graphState.edges}
             onEdgePointerDown={onResizeEdgePointerDown}
-            pinStyle={graphState.pinStyle}
           />
         ) : null}
         <NodeShell
@@ -437,10 +502,15 @@ export function FunctionNodeView({
           onToggleExpand={onToggleExpand}
           headerTrailing={headerPin}
           headerTrailingRightCss={cardTrailingOutputRightCss(graphState.pinStyle)}
+          headerTrailingZIndex={
+            graphState.pinStyle === 'orbit' ? GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX : 2
+          }
+          pinStyle={graphState.pinStyle}
           onHeaderDragPointerDown={onHeaderDragPointerDown}
           onBackgroundPointerDown={onSelect}
           dimHeaderChrome={false}
           showExpandChevron={showExpandChevron}
+          rightAlignedChevron={rightAlignedChevron}
         >
           {node.expanded ? (
             <>

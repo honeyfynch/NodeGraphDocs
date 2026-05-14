@@ -56,7 +56,7 @@ export const FOUNDATION_NODE_GRAPH_SPACING_PX = {
 
 /**
  * Each `--foundation-*` token in `theme.css` must use this numeric value (and `--studio-radius`
- * for 4px corners on ContentArea / number range).
+ * for 4px corners on ContentArea / number range). `--foundation-size-xsmall` aliases content min height.
  */
 export const FOUNDATION_NODE_GRAPH_CSS_VAR_VALUES = {
   '--foundation-gap-xxsmall': FOUNDATION_NODE_GRAPH_SPACING_PX.gapXXSmall,
@@ -68,6 +68,7 @@ export const FOUNDATION_NODE_GRAPH_CSS_VAR_VALUES = {
   '--foundation-padding-medium': FOUNDATION_NODE_GRAPH_SPACING_PX.paddingMedium,
   '--foundation-content-gap': FOUNDATION_NODE_GRAPH_SPACING_PX.contentGap,
   '--foundation-content-min-height': FOUNDATION_NODE_GRAPH_SPACING_PX.contentMinHeight,
+  '--foundation-size-xsmall': FOUNDATION_NODE_GRAPH_SPACING_PX.contentMinHeight,
   '--foundation-gap-numeric-cells': FOUNDATION_NODE_GRAPH_SPACING_PX.gapNumericCells,
   '--foundation-gap-number-range-inner': FOUNDATION_NODE_GRAPH_SPACING_PX.gapNumberRangeInner,
   '--foundation-label-col-width': FOUNDATION_NODE_GRAPH_SPACING_PX.labelColWidth,
@@ -88,7 +89,7 @@ export const FOUNDATION_NODE_GRAPH_RULE_SUMMARY: readonly string[] = [
   'Use Padding.Small (8px) horizontal and Padding.XSmall (4px) vertical on `.NodeRow` outer padding.',
   'Use Padding.XSmall (4px) for label column inset and ContentArea horizontal padding.',
   'Use dedicated 6px gap between 3× NumberInput cells (Figma `gap` token default on wrapperContent).',
-  'Guide panel `133:7964`: outer Padding.Small 8px; vertical stack Gap.XXSmall 2px; menu rows Padding.Medium 12px horizontal + Padding.XSmall 4px vertical; label↔trailing Gap.Medium 12px; section titles height 24px; row min-height 25px; backplate Color/Surface/Surface_200; stroke Color/Stroke/Default.',
+  'Guide panel `133:7964`: outer Padding.Small 8px; vertical stack Gap.XXSmall 2px; menu option rows Foundation Size XSmall (24px) frame height with Padding.Medium 12px horizontal; label↔trailing Gap.Medium 12px; section titles height 24px; backplate Color/Surface/Surface_200; stroke Color/Stroke/Default.',
   'Do not replace component padding with ad hoc values unless matching an updated Figma export.',
 ];
 

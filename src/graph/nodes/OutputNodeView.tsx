@@ -10,6 +10,7 @@ import {
   outputBodyInputPinLeftLocalPx,
   NODE_OUTPUT_BODY_CONTAINED_ROW_PADDING_LEFT_PX,
   OUTPUT_INPUT_ROW_PADDING_X,
+  graphOrbitPinHitStackStyle,
 } from '../geometry';
 import { resolveGraphHeaderHex } from '../pinColors';
 import { NodeShell } from '../NodeShell';
@@ -30,6 +31,7 @@ type Props = {
   onResizeEdgePointerDown?: (edge: 'left' | 'right', e: React.PointerEvent) => void;
   onNodeContextMenu?: (e: React.MouseEvent) => void;
   showExpandChevron?: boolean;
+  rightAlignedChevron?: boolean;
   onBoundsEl?: (el: HTMLDivElement | null) => void;
 };
 
@@ -46,6 +48,7 @@ export function OutputNodeView({
   onResizeEdgePointerDown,
   onNodeContextMenu,
   showExpandChevron = true,
+  rightAlignedChevron = true,
   onBoundsEl,
 }: Props) {
   const { state } = useGraph();
@@ -80,7 +83,6 @@ export function OutputNodeView({
           <NodeResizeEdges
             node={node}
             onEdgePointerDown={onResizeEdgePointerDown}
-            pinStyle={state.pinStyle}
           />
         ) : null}
       <NodeShell
@@ -95,6 +97,8 @@ export function OutputNodeView({
         onBackgroundPointerDown={onSelect}
         dimHeaderChrome={false}
         showExpandChevron={showExpandChevron}
+        rightAlignedChevron={rightAlignedChevron}
+        pinStyle={state.pinStyle}
       >
         {node.expanded ? (
           <div
@@ -118,6 +122,7 @@ export function OutputNodeView({
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
                 opacity: 1,
+                ...graphOrbitPinHitStackStyle(state.pinStyle),
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();

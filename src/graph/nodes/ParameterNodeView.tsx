@@ -9,6 +9,7 @@ import {
   PARAMETER_RADIUS_INNER,
   PARAMETER_RADIUS_OUTER,
   cardTrailingOutputRightCss,
+  GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX,
   ROW_H,
 } from '../geometry';
 import { parameterDisplayValue } from '../graphWiring';
@@ -97,7 +98,6 @@ export function ParameterNodeView({
           <NodeResizeEdges
             node={node}
             onEdgePointerDown={onResizeEdgePointerDown}
-            pinStyle={state.pinStyle}
           />
         ) : null}
       <div
@@ -196,7 +196,10 @@ export function ParameterNodeView({
                 right: cardTrailingOutputRightCss(state.pinStyle),
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translateY(-50%)',
-                zIndex: 2,
+                zIndex:
+                  state.pinStyle === 'orbit'
+                    ? GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX
+                    : 2,
                 opacity: (progressiveOutputPinOpacity?.('out') ?? 1),
               }}
               onPointerDown={(e) => {

@@ -4,6 +4,7 @@ import {
   useContext,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from 'react';
 import type {
@@ -232,6 +233,11 @@ export type GraphState = {
    */
   contextToolbar: boolean;
   /**
+   * When true (default), expand/collapse chevrons sit on the trailing side of node headers and
+   * input-group headers. When false, chevrons stay on the leading edge (legacy layout).
+   */
+  rightAlignedChevron: boolean;
+  /**
    * Per-node IDs whose outgoing wires show play-mode flow when graph play is off and Play mode is on.
    * Cleared when graph-level play becomes active.
    */
@@ -367,6 +373,7 @@ const initialState: GraphState = {
   graphScope: null,
   pinStyle: 'orbit',
   contextToolbar: true,
+  rightAlignedChevron: true,
   localPlayNodeIds: [],
 };
 
@@ -444,6 +451,7 @@ type Action =
   /** Advance every Generate node in `ids` (or full selection when omitted) from prompt → output (toolbar Run). */
   | { type: 'runGenerateSelection'; ids?: readonly string[] }
   | { type: 'setContextToolbar'; value: boolean }
+  | { type: 'setRightAlignedChevron'; value: boolean }
   | { type: 'copySelection' }
   | { type: 'cutSelection' }
   | { type: 'pasteClipboard'; center: { x: number; y: number } }
@@ -491,7 +499,24 @@ type Action =
       cloneFromId?: string;
       /** When `mode === 'new'`, sets parameter + node pin/header color. Ignored for `clone` (uses source). */
       outputPinColor?: GraphWireColorId;
-    };
+    }
+  /** Internal: restore full graph state from an undo/redo snapshot (immutable clone). */
+  | { type: 'hydrateGraphState'; state: GraphState };
+
+const MAX_GRAPH_UNDO = 80;
+
+function shouldRecordActionForUndo(action: Action): boolean {
+  switch (action.type) {
+    case 'select':
+    case 'selectMany':
+    case 'moveNode':
+    case 'setNodeDimensions':
+    case 'hydrateGraphState':
+      return false;
+    default:
+      return true;
+  }
+}
 
 function reducer(state: GraphState, action: Action): GraphState {
   switch (action.type) {
@@ -644,6 +669,8 @@ function reducer(state: GraphState, action: Action): GraphState {
     }
     case 'setContextToolbar':
       return { ...state, contextToolbar: action.value };
+    case 'setRightAlignedChevron':
+      return { ...state, rightAlignedChevron: action.value };
     case 'unifyExpandSelection': {
       const ids =
         action.ids && action.ids.length > 0 ? [...action.ids] : [...state.selectedIds];
@@ -1278,6 +1305,8 @@ function reducer(state: GraphState, action: Action): GraphState {
 
       return { ...state, nodes, edges };
     }
+    case 'hydrateGraphState':
+      return structuredClone(action.state);
     default:
       return state;
   }
@@ -1287,18 +1316,70 @@ type Ctx = {
   state: GraphState;
   dispatch: React.Dispatch<Action>;
   connectEdge: (edge: GraphEdge) => void;
+  pushUndoSnapshot: () => void;
+  undo: () => void;
+  redo: () => void;
 };
 
 const GraphContext = createContext<Ctx | null>(null);
 
 export function GraphProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
-  const connectEdge = useCallback((edge: GraphEdge) => {
-    dispatch({ type: 'addEdge', edge });
+  const [state, baseDispatch] = useReducer(reducer, initialState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const historyRef = useRef<{ past: GraphState[]; future: GraphState[] }>({
+    past: [],
+    future: [],
+  });
+
+  const dispatch = useCallback((action: Action) => {
+    if (action.type === 'hydrateGraphState') {
+      baseDispatch(action);
+      return;
+    }
+    if (shouldRecordActionForUndo(action)) {
+      const past = historyRef.current.past;
+      past.push(structuredClone(stateRef.current));
+      historyRef.current.future = [];
+      while (past.length > MAX_GRAPH_UNDO) past.shift();
+    }
+    baseDispatch(action);
   }, []);
+
+  const pushUndoSnapshot = useCallback(() => {
+    const past = historyRef.current.past;
+    past.push(structuredClone(stateRef.current));
+    historyRef.current.future = [];
+    while (past.length > MAX_GRAPH_UNDO) past.shift();
+  }, []);
+
+  const undo = useCallback(() => {
+    const past = historyRef.current.past;
+    if (past.length === 0) return;
+    const prev = past.pop()!;
+    historyRef.current.future.push(structuredClone(stateRef.current));
+    baseDispatch({ type: 'hydrateGraphState', state: prev });
+  }, []);
+
+  const redo = useCallback(() => {
+    const future = historyRef.current.future;
+    if (future.length === 0) return;
+    const next = future.pop()!;
+    historyRef.current.past.push(structuredClone(stateRef.current));
+    baseDispatch({ type: 'hydrateGraphState', state: next });
+  }, []);
+
+  const connectEdge = useCallback(
+    (edge: GraphEdge) => {
+      dispatch({ type: 'addEdge', edge });
+    },
+    [dispatch]
+  );
+
   const value = useMemo(
-    () => ({ state, dispatch, connectEdge }),
-    [state, dispatch, connectEdge]
+    () => ({ state, dispatch, connectEdge, pushUndoSnapshot, undo, redo }),
+    [state, dispatch, connectEdge, pushUndoSnapshot, undo, redo]
   );
   return <GraphContext.Provider value={value}>{children}</GraphContext.Provider>;
 }
