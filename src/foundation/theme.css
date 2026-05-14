@@ -42,11 +42,14 @@
    */
   --graph-box-select-fill: rgba(101, 123, 244, 0.42);
   --graph-box-select-stroke: #335fff;
+  /**
+   * Group-scoped graph surface overlay — Figma `2012:151683` Highlight_100 (`get_design_context`):
+   * `highlight/highlight_100` / variable `Highlight/Highlight_100` → `#657bf41f` (#657BF4 @ 12%).
+   */
+  --graph-scope-surface-highlight-100: rgba(101, 123, 244, 0.12);
   /** Figma `bg/shift-200` / `bg/shift-300` (workbench panel tabs, graph ribbon chip). */
   --studio-bg-shift-200: rgba(208, 217, 251, 0.08);
   --studio-bg-shift-300: rgba(208, 217, 251, 0.12);
-  /** Workbench `384:29872` presentation overlay — `Color/ActionSoftEmphasis/Background`. */
-  --workbench-presentation-tint: rgba(51, 95, 255, 0.4);
   /** Foundation-style scrollbar (no dedicated ScrollBar export in `@rbx/foundation-web` list — track/thumb tokens). */
   --foundation-scrollbar-track: transparent;
   --foundation-scrollbar-thumb: rgba(208, 217, 251, 0.28);
@@ -64,6 +67,8 @@
   --studio-content-emphasis: #f7f7f8;
   --studio-radius: 4px;
   --studio-radius-panel: 8px;
+  /** Figma `radius/xsmall` (`get_variable_defs` on `2025:7877`) — ToggleButton chrome. */
+  --studio-radius-xsmall: 2px;
 
   /** Matches `.studio-node-card` stroke (`Stroke/Weight` 1px); inset focus ring on property controls. */
   --studio-focus-ring-width: 1px;
@@ -75,7 +80,6 @@
    * Figma refs: `73:26702` `.NodeRow` (row paddingY 4px = `--foundation-padding-xsmall` in `nodeRow`),
    * `73:5672` / `73:5695` / `73:5685` `.NodeProperty` variants. `--foundation-padding-xxsmall` stays 2px for inner control insets.
    */
-  /** Figma `Gap/XXSmall` — Guide `133:7964` vertical stack between rows/sections. */
   --foundation-gap-xxsmall: 2px;
   --foundation-gap-xsmall: 4px;
   /** Figma `Gap/Medium` — Guide `133:7964` row main gap + inspector `.gap-md` scale. */
@@ -109,6 +113,18 @@
   --alpha-text-labelsmall-line-height: 18px;
   --alpha-text-labelsmall-font-weight: 600;
   --alpha-text-labelsmall-letter-spacing: 0px;
+  /**
+   * Figma `label-small` on `2025:7877` PanelTabBar (`get_variable_defs`: `ALPHA/Text/LabelSmall/LineHeight` = 12).
+   * Scoped to `.workbench-inspector-tab` so global label-small stays at 18px for form density.
+   */
+  --alpha-text-labelsmall-line-height-tabs: 12px;
+  /**
+   * ALPHA / Caption Large — Figma `2025:7885` workbench title (`get_design_context` + variables).
+   */
+  --alpha-text-captionlarge-font-size: 14px;
+  --alpha-text-captionlarge-line-height: 20px;
+  --alpha-text-captionlarge-letter-spacing: 0px;
+  --alpha-text-captionlarge-font-weight: 600;
   --alpha-text-bodylarge-font-size: 16px;
   --alpha-text-bodylarge-line-height: 22px;
   --alpha-text-bodylarge-letter-spacing: 0px;
@@ -138,7 +154,8 @@ body.graph-app-body {
 }
 
 /*
- * App shell — Figma `384:29872` Workbench Frame + `2013:190316` inspector panel + `2009:70166` graph panel.
+ * App shell — Figma `2025:7877` Workbench Frame (`get_design_context` + `get_variable_defs`):
+ * `Color/Surface/Surface_0` canvas, header `2025:8147`, prototype `2025:8148` + inspector `2025:8242`.
  */
 .workbench-frame {
   position: relative;
@@ -149,70 +166,113 @@ body.graph-app-body {
   min-width: 0;
   width: 100%;
   overflow: hidden;
-}
-.workbench-frame__presentation {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 24px;
+  background: var(--studio-surface-0);
   box-sizing: border-box;
-  background: linear-gradient(
-      90deg,
-      var(--workbench-presentation-tint) 0%,
-      var(--workbench-presentation-tint) 100%
-    ),
-    linear-gradient(90deg, var(--studio-canvas) 0%, var(--studio-canvas) 100%);
 }
-.workbench-frame__presentation-title {
+/** Figma `2025:8147` — `gap` 48px, padding 32px; title flexes, ToggleButton pinned end. */
+.workbench-frame__header {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 48px;
+  width: 100%;
+  padding: 32px;
+  min-width: 0;
+}
+/** Figma `2025:7885` — `ALPHA/Text/CaptionLarge/*` + `Color/Content/Emphasis`. */
+.workbench-frame__title {
+  flex: 1 1 0;
+  min-width: 0;
   margin: 0;
   font-family: var(--alpha-font-family);
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 24px;
-  letter-spacing: -0.24px;
+  font-size: var(--alpha-text-captionlarge-font-size);
+  line-height: var(--alpha-text-captionlarge-line-height);
+  letter-spacing: var(--alpha-text-captionlarge-letter-spacing);
+  font-weight: var(--alpha-text-captionlarge-font-weight);
   text-transform: uppercase;
   color: var(--studio-content-emphasis);
 }
-.workbench-frame__presentation-footer {
-  min-height: 24px;
+/** Figma `2025:8818` ToggleButton — `bg/shift-300`, `radius/xsmall` (2px), icon 16×16, `padding/xsmall`. */
+.workbench-inspector-visibility-toggle {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--studio-radius-xsmall);
+  background: var(--studio-bg-shift-300);
+  color: var(--studio-content-emphasis);
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
-.workbench-frame__main {
+.workbench-inspector-visibility-toggle:hover {
+  filter: brightness(1.06);
+}
+.workbench-inspector-visibility-toggle:active {
+  filter: brightness(0.94);
+}
+.workbench-inspector-visibility-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--studio-focus-ring-color);
+}
+.workbench-inspector-visibility-toggle__pad {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--foundation-padding-xsmall);
+  box-sizing: border-box;
+}
+.workbench-inspector-visibility-toggle__icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--studio-content-emphasis);
+}
+/** Figma `2025:8241` — `gap` 32px, horizontal padding 32px. */
+.workbench-frame__content {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: row;
+  box-sizing: border-box;
   flex: 1;
   min-height: 0;
   min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 32px;
+  padding: 0 32px 32px;
 }
-/** Figma `384:29876` Control column — default width set in `App.tsx` (400px); horizontal resize via handles. */
+/** Figma `2025:8242` ControlColumn — width from `App.tsx` (400px); `min-w` 288px. */
 .workbench-control-column {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  padding: 72px 24px 24px;
+  min-width: 288px;
   min-height: 0;
   position: relative;
+  padding: 0;
 }
 .workbench-resize-handle {
   position: absolute;
-  top: 72px;
-  bottom: 24px;
+  top: 0;
+  bottom: 0;
   width: 6px;
   z-index: 3;
   touch-action: none;
   cursor: col-resize;
 }
-.workbench-resize-handle--left {
+.workbench-resize-handle--splitter {
   left: -3px;
-}
-.workbench-resize-handle--right {
-  right: -3px;
 }
 .workbench-resize-handle:hover {
   background: rgba(208, 217, 251, 0.08);
@@ -221,17 +281,17 @@ body.graph-app-body {
 .workbench-inspector-section-divider {
   border-bottom: 1px solid rgba(208, 217, 251, 0.12);
 }
-/** Figma `384:29874` Media column — graph region. */
+/** Figma `2025:8148` Media — flexes; fills width when inspector is hidden. */
 .workbench-media-column {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
   min-height: 0;
-  padding: 72px 24px 24px;
+  padding: 0;
 }
-/** Figma `2009:70166` — surface-100 shell around graph slot. */
+/** Figma `2025:8149` `[Legacy] Panel` — `Surface_100`, `radius/small` (4px). */
 .workbench-graph-legacy-panel {
   display: flex;
   flex-direction: column;
@@ -240,6 +300,7 @@ body.graph-app-body {
   overflow: hidden;
   background: var(--studio-surface-100);
   border: 1px solid var(--studio-surface-100);
+  border-radius: var(--studio-radius);
 }
 .workbench-graph-slot {
   display: flex;
@@ -371,7 +432,9 @@ button.graph-ribbon-scope-trigger.select-trigger {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  box-sizing: border-box;
   background: var(--studio-surface-100);
+  border-radius: var(--studio-radius);
 }
 .workbench-inspector-tabbar {
   flex-shrink: 0;
@@ -433,6 +496,7 @@ button.graph-ribbon-scope-trigger.select-trigger {
   padding: 0 6px;
   border-radius: var(--studio-radius);
   color: var(--studio-content-muted);
+  line-height: var(--alpha-text-labelsmall-line-height-tabs);
 }
 .workbench-inspector-tab--selected .text-label-small {
   background: var(--studio-bg-shift-300);
@@ -839,6 +903,15 @@ button.graph-ribbon-scope-trigger.select-trigger {
   height: 16px;
   object-fit: contain;
   object-position: center;
+}
+
+/*
+ * Context toolbar tooltips — reuse `.graph-pin-tooltip` (Pin.tsx). Pins open upward; the toolbar sits
+ * under `.graph-surface { overflow: hidden }`, so open **downward** to stay visible.
+ */
+.graph-context-toolbar .graph-pin-wrap .graph-pin-tooltip {
+  bottom: auto;
+  top: calc(100% + 6px);
 }
 
 /*

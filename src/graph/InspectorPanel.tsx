@@ -49,7 +49,7 @@ export function InspectorPanel() {
   const settingsTabLabel = node ? 'Node Settings' : 'Graph Settings';
 
   return (
-    <aside className="workbench-inspector-panel" aria-label="Inspector" data-node-id="2013:190316">
+    <div className="workbench-inspector-panel" data-node-id="2025:8243">
       <div className="workbench-inspector-tabbar">
         <div className="workbench-inspector-tabbar__tabs">
           <button
@@ -829,6 +829,21 @@ export function InspectorPanel() {
             </NodePropertyFieldShell>
             <NodePropertyFieldShell variant="plain">
               <Checkbox
+                label="Docked"
+                hint={
+                  state.contextToolbar
+                    ? 'Keep the context toolbar centered below the graph ribbon (12px gap).'
+                    : 'Turn on Context Toolbar to use this option.'
+                }
+                checked={state.contextToolbarDocked}
+                disabled={!state.contextToolbar}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setContextToolbarDocked', value })
+                }
+              />
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
                 label="Right-aligned Chevron"
                 hint="When off, expand/collapse chevrons stay on the left of node headers and input groups. When on (default), chevrons align to the right of the header row. Node header chevrons still hide when Context Toolbar is on."
                 checked={state.rightAlignedChevron}
@@ -859,7 +874,7 @@ export function InspectorPanel() {
           </div>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 

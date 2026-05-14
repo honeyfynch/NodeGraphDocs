@@ -1123,7 +1123,9 @@ export function GraphCanvas() {
         style={{
           position: 'relative',
           overflow: 'hidden',
-          background: 'var(--studio-canvas)',
+          background: state.graphScope
+            ? 'linear-gradient(0deg, var(--graph-scope-surface-highlight-100), var(--graph-scope-surface-highlight-100)), var(--studio-canvas)'
+            : 'var(--studio-canvas)',
           outline: 'none',
         }}
       >
@@ -1133,6 +1135,7 @@ export function GraphCanvas() {
             contextToolbarTargetIds.length > 0 &&
             !state.graphScope
         )}
+        docked={state.contextToolbarDocked}
         selectedIds={contextToolbarTargetIds}
         nodes={state.nodes}
         nodeElById={nodeBoundsRefMap.current}

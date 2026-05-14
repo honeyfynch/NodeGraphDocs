@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState, type RefObject } from 'react';
+import { useLayoutEffect, useMemo, useState, type ReactNode, type RefObject } from 'react';
 import type { GraphNode } from './types';
 import mediaPlayLargeUrl from '../assets/icons/media-play-large.svg?url';
 import mediaPauseLargeUrl from '../assets/icons/media-pause-large.svg?url';
@@ -10,9 +10,13 @@ import generateRunUrl from '../assets/icons/context-toolbar-generate-run.svg?url
 
 const TOOLBAR_GAP_ABOVE_SELECTION_PX = 4;
 const TOOLBAR_BACKPLATE_H_PX = 34;
+/** Docked mode: top of toolbar (absolute in graph surface) = this gap below the graph ribbon. */
+const TOOLBAR_DOCKED_TOP_OFFSET_PX = 12;
 
 export type GraphSelectionContextToolbarProps = {
   open: boolean;
+  /** When true, anchor toolbar centered below the ribbon instead of above the selection. */
+  docked: boolean;
   selectedIds: readonly string[];
   nodes: readonly GraphNode[];
   /** Map node id → element used for union bounding rect (client coords). */
@@ -30,6 +34,18 @@ export type GraphSelectionContextToolbarProps = {
   onToggleSelectionPlay: () => void;
   onRunGenerateSelection: () => void;
 };
+
+/** Pin-style hover label (`graph-pin-tooltip`); toolbar positions it below to avoid surface clip. */
+function ContextToolbarTooltipWrap({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="graph-pin-wrap">
+      {children}
+      <span className="graph-pin-tooltip" role="tooltip">
+        {label}
+      </span>
+    </span>
+  );
+}
 
 function unionClientRect(
   ids: readonly string[],
@@ -55,6 +71,7 @@ function unionClientRect(
 
 export function GraphSelectionContextToolbar({
   open,
+  docked,
   selectedIds,
   nodes,
   nodeElById,
@@ -106,12 +123,20 @@ export function GraphSelectionContextToolbar({
     }
     const measure = () => {
       const root = positionRootRef.current;
-      const u = unionClientRect(selectedIds, nodeElById);
-      if (!root || !u || u.width <= 0 || u.height <= 0) {
+      if (!root) {
         setPos(null);
         return;
       }
       const rr = root.getBoundingClientRect();
+      if (docked) {
+        setPos({ left: rr.width / 2, top: TOOLBAR_DOCKED_TOP_OFFSET_PX });
+        return;
+      }
+      const u = unionClientRect(selectedIds, nodeElById);
+      if (!u || u.width <= 0 || u.height <= 0) {
+        setPos(null);
+        return;
+      }
       setPos({
         left: u.left - rr.left + u.width / 2,
         top: u.top - rr.top - TOOLBAR_GAP_ABOVE_SELECTION_PX - TOOLBAR_BACKPLATE_H_PX,
@@ -124,7 +149,7 @@ export function GraphSelectionContextToolbar({
       window.removeEventListener('resize', measure);
       window.removeEventListener('scroll', measure, true);
     };
-  }, [open, selectedIds, nodeElById, nodes, viewLayoutKey, positionRootRef]);
+  }, [open, docked, selectedIds, nodeElById, nodes, viewLayoutKey, positionRootRef]);
 
   if (!open || selectedIds.length === 0 || !firstNode || !pos) return null;
 
@@ -132,11 +157,15 @@ export function GraphSelectionContextToolbar({
   const playIconShowsPause = graphPlayActive || playShowsPause;
   const playIconSrc = playIconShowsPause ? mediaPauseLargeUrl : mediaPlayLargeUrl;
   const playDisabled = graphPlayActive;
-  const playTitle = graphPlayActive
+  const playTooltip = playIconShowsPause ? 'Pause' : 'Play';
+  const playAriaLabel = graphPlayActive
     ? 'Graph runtime is active — pause from the graph toolbar'
     : playShowsPause
       ? 'Pause selection playback'
       : 'Play selection playback';
+
+  const expandTooltip = expandShowsCollapse ? 'Collapse' : 'Expand';
+  const muteTooltip = muteShowsMuted ? 'Unmute' : 'Mute';
 
   return (
     <div
@@ -148,51 +177,32 @@ export function GraphSelectionContextToolbar({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="graph-context-toolbar__backplate" role="toolbar" aria-label="Node actions">
-        <button
-          type="button"
-          className="graph-context-toolbar__btn"
-          aria-label={expandShowsCollapse ? 'Collapse selected nodes' : 'Expand selected nodes'}
-          title={expandShowsCollapse ? 'Collapse' : 'Expand'}
-          onClick={onUnifyExpand}
-        >
-          <img
-            src={expandShowsCollapse ? frameCollapseUrl : frameExpandUrl}
-            width={expandShowsCollapse ? 12 : 16}
-            height={expandShowsCollapse ? 12 : 16}
-            alt=""
-            draggable={false}
-            className="graph-context-toolbar__img"
-          />
-        </button>
-        <button
-          type="button"
-          className="graph-context-toolbar__btn"
-          aria-label={muteShowsMuted ? 'Unmute selected nodes' : 'Mute selected nodes'}
-          title={muteShowsMuted ? 'Unmute' : 'Mute'}
-          onClick={onToggleMute}
-        >
-          <img
-            src={muteShowsMuted ? viewOffUrl : viewOnUrl}
-            width={16}
-            height={16}
-            alt=""
-            draggable={false}
-            className="graph-context-toolbar__img"
-          />
-        </button>
-        {showPlayBtn ? (
+        <ContextToolbarTooltipWrap label={expandTooltip}>
           <button
             type="button"
             className="graph-context-toolbar__btn"
-            aria-label={playTitle}
-            title={playTitle}
-            aria-pressed={playIconShowsPause}
-            disabled={playDisabled}
-            style={playDisabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
-            onClick={onToggleSelectionPlay}
+            aria-label={expandShowsCollapse ? 'Collapse selected nodes' : 'Expand selected nodes'}
+            onClick={onUnifyExpand}
           >
             <img
-              src={playIconSrc}
+              src={expandShowsCollapse ? frameCollapseUrl : frameExpandUrl}
+              width={expandShowsCollapse ? 12 : 16}
+              height={expandShowsCollapse ? 12 : 16}
+              alt=""
+              draggable={false}
+              className="graph-context-toolbar__img"
+            />
+          </button>
+        </ContextToolbarTooltipWrap>
+        <ContextToolbarTooltipWrap label={muteTooltip}>
+          <button
+            type="button"
+            className="graph-context-toolbar__btn"
+            aria-label={muteShowsMuted ? 'Unmute selected nodes' : 'Mute selected nodes'}
+            onClick={onToggleMute}
+          >
+            <img
+              src={muteShowsMuted ? viewOffUrl : viewOnUrl}
               width={16}
               height={16}
               alt=""
@@ -200,24 +210,47 @@ export function GraphSelectionContextToolbar({
               className="graph-context-toolbar__img"
             />
           </button>
+        </ContextToolbarTooltipWrap>
+        {showPlayBtn ? (
+          <ContextToolbarTooltipWrap label={playTooltip}>
+            <button
+              type="button"
+              className="graph-context-toolbar__btn"
+              aria-label={playAriaLabel}
+              aria-pressed={playIconShowsPause}
+              disabled={playDisabled}
+              style={playDisabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+              onClick={onToggleSelectionPlay}
+            >
+              <img
+                src={playIconSrc}
+                width={16}
+                height={16}
+                alt=""
+                draggable={false}
+                className="graph-context-toolbar__img"
+              />
+            </button>
+          </ContextToolbarTooltipWrap>
         ) : null}
         {selectionHasGenerate ? (
-          <button
-            type="button"
-            className="graph-context-toolbar__btn"
-            aria-label="Run generative nodes in selection"
-            title="Run"
-            onClick={onRunGenerateSelection}
-          >
-            <img
-              src={generateRunUrl}
-              width={16}
-              height={16}
-              alt=""
-              draggable={false}
-              className="graph-context-toolbar__img"
-            />
-          </button>
+          <ContextToolbarTooltipWrap label="Generate">
+            <button
+              type="button"
+              className="graph-context-toolbar__btn"
+              aria-label="Run generative nodes in selection"
+              onClick={onRunGenerateSelection}
+            >
+              <img
+                src={generateRunUrl}
+                width={16}
+                height={16}
+                alt=""
+                draggable={false}
+                className="graph-context-toolbar__img"
+              />
+            </button>
+          </ContextToolbarTooltipWrap>
         ) : null}
       </div>
     </div>

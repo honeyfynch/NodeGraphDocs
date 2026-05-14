@@ -297,13 +297,42 @@ export function outputBodyInputPinLeftLocalPx(nodeX: number, pinStyle: GraphPinS
 /**
  * Collapsed-card input attachment X (graph space). **Classic** and **orbit** use the same flush-left
  * stub so wires meet the frame; expanded **orbit** inputs still use {@link functionLikeInputPinCenterX}.
- * **Contained** keeps the chevron-aligned center on the card.
+ * Collapsed **Input Group** child ports (node expanded) use this same stub X so orbit wires meet the frame
+ * like a fully collapsed node. **Contained** keeps the chevron-aligned center on the card.
  */
 export function collapsedStubInputWireX(nodeX: number, pinStyle: GraphPinStyleId): number {
   if (pinStyle === 'classic' || pinStyle === 'orbit') {
     return nodeX + NODE_CARD_BORDER + NODE_INPUT_WIRE_X_NUDGE;
   }
   return functionLikeInputPinCenterX(nodeX, pinStyle);
+}
+
+/**
+ * Body-row `left` (with `translate(-50%, …)`) so pin **center** matches {@link collapsedStubInputWireX}
+ * in graph space — used for collapsed Input Group stub hits (same contract as fully collapsed node inputs).
+ */
+export function collapsedInputGroupStubPinCenterXLocalPx(
+  nodeX: number,
+  pinStyle: GraphPinStyleId
+): number {
+  return collapsedStubInputWireX(nodeX, pinStyle) - nodeX - NODE_CARD_BORDER;
+}
+
+function functionInputPinWireXForFunctionPortIndex(
+  node: FunctionLayoutBody,
+  portIndex: number,
+  pinStyle: GraphPinStyleId
+): number {
+  const layouts = layoutFunctionInputPorts(node);
+  const hit = layouts.find((L) => L.portIndex === portIndex);
+  const groupSlot =
+    hit?.target.kind === 'inputGroupChild'
+      ? node.slots[hit.target.groupSlotIndex]
+      : undefined;
+  if (groupSlot && !inputGroupExpanded(groupSlot)) {
+    return collapsedStubInputWireX(node.x, pinStyle);
+  }
+  return functionLikeInputPinCenterX(node.x, pinStyle);
 }
 
 export function functionLikeInputPinCenterX(nodeX: number, pinStyle: GraphPinStyleId): number {
@@ -636,7 +665,7 @@ export function pinGraphPosition(
         hit?.centerY ??
         node.y + NODE_CARD_BORDER + HEADER_H + ROW_H / 2 + NODE_ROW_PIN_CENTER_Y_OFFSET;
       return {
-        x: functionLikeInputPinCenterX(node.x, pinStyle),
+        x: functionInputPinWireXForFunctionPortIndex(node, idx, pinStyle),
         y: centerY,
       };
     }
@@ -661,7 +690,7 @@ export function pinGraphPosition(
         hit?.centerY ??
         node.y + NODE_CARD_BORDER + HEADER_H + ROW_H / 2 + NODE_ROW_PIN_CENTER_Y_OFFSET;
       return {
-        x: functionLikeInputPinCenterX(node.x, pinStyle),
+        x: functionInputPinWireXForFunctionPortIndex(node, idx, pinStyle),
         y: centerY,
       };
     }
@@ -701,8 +730,12 @@ export function pinGraphPosition(
         GENERATE_INPUT_GROUP_HEADER_H +
         ROW_H / 2 +
         NODE_ROW_PIN_CENTER_Y_OFFSET;
+      const x =
+        !node.inputGroupExpanded
+          ? collapsedStubInputWireX(node.x, pinStyle)
+          : functionLikeInputPinCenterX(node.x, pinStyle);
       return {
-        x: functionLikeInputPinCenterX(node.x, pinStyle),
+        x,
         y: cy ?? yFallback,
       };
     }

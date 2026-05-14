@@ -233,6 +233,11 @@ export type GraphState = {
    */
   contextToolbar: boolean;
   /**
+   * Experimental: when true and {@link contextToolbar} is on, the selection toolbar is fixed
+   * centered under the graph ribbon instead of above the selection. Cleared when the toolbar is off.
+   */
+  contextToolbarDocked: boolean;
+  /**
    * When true (default), expand/collapse chevrons sit on the trailing side of node headers and
    * input-group headers. When false, chevrons stay on the leading edge (legacy layout).
    */
@@ -373,6 +378,7 @@ const initialState: GraphState = {
   graphScope: null,
   pinStyle: 'orbit',
   contextToolbar: true,
+  contextToolbarDocked: false,
   rightAlignedChevron: true,
   localPlayNodeIds: [],
 };
@@ -451,6 +457,7 @@ type Action =
   /** Advance every Generate node in `ids` (or full selection when omitted) from prompt → output (toolbar Run). */
   | { type: 'runGenerateSelection'; ids?: readonly string[] }
   | { type: 'setContextToolbar'; value: boolean }
+  | { type: 'setContextToolbarDocked'; value: boolean }
   | { type: 'setRightAlignedChevron'; value: boolean }
   | { type: 'copySelection' }
   | { type: 'cutSelection' }
@@ -668,7 +675,14 @@ function reducer(state: GraphState, action: Action): GraphState {
       };
     }
     case 'setContextToolbar':
-      return { ...state, contextToolbar: action.value };
+      return {
+        ...state,
+        contextToolbar: action.value,
+        contextToolbarDocked: action.value ? state.contextToolbarDocked : false,
+      };
+    case 'setContextToolbarDocked':
+      if (!state.contextToolbar) return state;
+      return { ...state, contextToolbarDocked: action.value };
     case 'setRightAlignedChevron':
       return { ...state, rightAlignedChevron: action.value };
     case 'unifyExpandSelection': {
@@ -1305,8 +1319,16 @@ function reducer(state: GraphState, action: Action): GraphState {
 
       return { ...state, nodes, edges };
     }
-    case 'hydrateGraphState':
-      return structuredClone(action.state);
+    case 'hydrateGraphState': {
+      const next = structuredClone(action.state) as GraphState;
+      if (typeof next.contextToolbarDocked !== 'boolean') {
+        next.contextToolbarDocked = false;
+      }
+      if (!next.contextToolbar) {
+        next.contextToolbarDocked = false;
+      }
+      return next;
+    }
     default:
       return state;
   }

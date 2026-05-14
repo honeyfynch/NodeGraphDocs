@@ -7,6 +7,7 @@ import {
 import { foundationLayout, nodeLabelColumn, nodeRow } from '../figmaNodeTokens';
 import {
   cardTrailingOutputRightCss,
+  collapsedInputGroupStubPinCenterXLocalPx,
   functionBodyInputPinLeftLocalPx,
   graphOrbitPinHitStackStyle,
   GRAPH_ORBIT_PIN_ABOVE_RESIZE_Z_INDEX,
@@ -267,7 +268,7 @@ export function FunctionNodeView({
             <div
               style={{
                 position: 'absolute',
-                left: functionBodyInputPinLeftLocalPx(node.x, graphState.pinStyle),
+                left: collapsedInputGroupStubPinCenterXLocalPx(node.x, graphState.pinStyle),
                 top: `calc(50% + ${NODE_ROW_PIN_CENTER_Y_OFFSET}px)`,
                 transform: 'translate(-50%, -50%)',
                 width: GRAPH_PIN_DIAMETER_PX,
