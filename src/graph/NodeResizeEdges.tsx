@@ -7,6 +7,7 @@ import {
   PARAMETER_CHIP_H,
   ROW_H,
   nodeHeight,
+  type NodeHeightOptions,
 } from './geometry';
 
 type Props = {
@@ -14,6 +15,8 @@ type Props = {
   /** Required for {@link GraphNode} `generate` height (input row count from edges). */
   edges?: readonly GraphEdge[];
   onEdgePointerDown: (edge: 'left' | 'right', e: PointerEvent<HTMLDivElement>) => void;
+  /** Passed to {@link nodeHeight} for `generate` nodes (e.g. Run row omitted with context toolbar). */
+  nodeHeightOptions?: NodeHeightOptions;
 };
 
 /** Hit band thickness (px) along the node outline. */
@@ -51,9 +54,39 @@ export function NodeResizeEdges({
   node,
   edges = [],
   onEdgePointerDown,
+  nodeHeightOptions,
 }: Props) {
-  const h = nodeHeight(node, edges);
+  const h = nodeHeight(node, edges, nodeHeightOptions);
   const bandEdge = OUTSET + ZONE;
+
+  if (node.kind === 'task') {
+    return (
+      <>
+        <div
+          aria-hidden
+          style={{
+            ...zoneBase,
+            left: -bandEdge,
+            top: 0,
+            width: ZONE,
+            height: HEADER_H,
+          }}
+          onPointerDown={bindEdge('left', onEdgePointerDown)}
+        />
+        <div
+          aria-hidden
+          style={{
+            ...zoneBase,
+            right: -bandEdge,
+            top: 0,
+            width: ZONE,
+            height: HEADER_H,
+          }}
+          onPointerDown={bindEdge('right', onEdgePointerDown)}
+        />
+      </>
+    );
+  }
 
   if (
     node.kind === 'function' ||

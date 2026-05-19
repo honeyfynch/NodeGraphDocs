@@ -23,6 +23,9 @@ export type GraphContextMenuProps = {
   parameterRows: readonly { id: string; title: string }[];
   colorRows: readonly { label: string; colorId: GraphWireColorId }[];
   onInsertFunctionNode: (outputPinColor: GraphWireColorId) => void;
+  /** Management graph: single action replaces Insert node + color flyout. */
+  managementInsertTask?: boolean;
+  onInsertTaskNode?: () => void;
   onInsertParameterFromTemplate: (parameterId: string) => void;
   onInsertParameterNew: (outputPinColor: GraphWireColorId) => void;
   onCut: () => void;
@@ -39,6 +42,8 @@ export type GraphContextMenuProps = {
   onMuteSelection?: () => void;
   /** When true, Ungroup is inactive (no group node in the current selection). */
   ungroupDisabled?: boolean;
+  /** When true, Group and Ungroup selection are disabled (e.g. management graph). */
+  graphGroupingDisabled?: boolean;
 };
 
 export function GraphContextMenu({
@@ -51,6 +56,8 @@ export function GraphContextMenu({
   parameterRows,
   colorRows,
   onInsertFunctionNode,
+  managementInsertTask = false,
+  onInsertTaskNode,
   onInsertParameterFromTemplate,
   onInsertParameterNew,
   onCut,
@@ -65,6 +72,7 @@ export function GraphContextMenu({
   muteSelectionLabel,
   onMuteSelection,
   ungroupDisabled = false,
+  graphGroupingDisabled = false,
 }: GraphContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const insertNodeFlyoutRef = useRef<HTMLDivElement>(null);
@@ -167,7 +175,8 @@ export function GraphContextMenu({
 
   const selOff = !hasSelection;
   const pasteOff = !hasClipboard;
-  const ungroupOff = selOff || ungroupDisabled;
+  const ungroupOff = selOff || ungroupDisabled || graphGroupingDisabled;
+  const groupOff = selOff || graphGroupingDisabled;
 
   return (
     <>
@@ -183,14 +192,24 @@ export function GraphContextMenu({
           ...graphMenuFlyoutPanelStyle,
         }}
       >
-        <GraphMenuRow
-          label="Insert node"
-          trailing={<GraphMenuSubmenuChevron />}
-          onClick={() => {
-            setInsertParamSubmenuOpen(false);
-            setInsertNodeSubmenuOpen((o) => !o);
-          }}
-        />
+        {managementInsertTask ? (
+          <GraphMenuRow
+            label="Insert task"
+            onClick={() => {
+              onInsertTaskNode?.();
+              onClose();
+            }}
+          />
+        ) : (
+          <GraphMenuRow
+            label="Insert node"
+            trailing={<GraphMenuSubmenuChevron />}
+            onClick={() => {
+              setInsertParamSubmenuOpen(false);
+              setInsertNodeSubmenuOpen((o) => !o);
+            }}
+          />
+        )}
         {parametersEnabled ? (
           <GraphMenuRow
             label="Insert parameter"
@@ -251,7 +270,7 @@ export function GraphContextMenu({
         <GraphMenuRow
           label="Group selection"
           trailing={<span style={graphMenuHotkeyStyle}>⌘G</span>}
-          disabled={selOff}
+          disabled={groupOff}
           onClick={onGroup}
         />
         <GraphMenuRow
@@ -270,18 +289,20 @@ export function GraphContextMenu({
         ) : null}
       </div>
 
-      <GraphMenuColorFlyout
-        open={insertNodeSubmenuOpen}
-        sectionTitle="Insert node"
-        mainMenuRef={ref}
-        flyoutRef={insertNodeFlyoutRef}
-        menuPosition={position}
-        colorRows={colorRows}
-        onPickColor={(c) => {
-          onInsertFunctionNode(c);
-          setInsertNodeSubmenuOpen(false);
-        }}
-      />
+      {!managementInsertTask ? (
+        <GraphMenuColorFlyout
+          open={insertNodeSubmenuOpen}
+          sectionTitle="Insert node"
+          mainMenuRef={ref}
+          flyoutRef={insertNodeFlyoutRef}
+          menuPosition={position}
+          colorRows={colorRows}
+          onPickColor={(c) => {
+            onInsertFunctionNode(c);
+            setInsertNodeSubmenuOpen(false);
+          }}
+        />
+      ) : null}
 
       <GraphMenuInsertParameterFlyout
         open={insertParamSubmenuOpen}

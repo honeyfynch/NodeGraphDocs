@@ -3,8 +3,9 @@ import {
   inputPinColorForTarget,
   layoutFunctionInputPorts,
   nodeHeight,
+  type NodeHeightOptions,
 } from './geometry';
-import { UNIVERSAL_SOCKET_COLOR_ID, type GraphWireColorId } from './pinColors';
+import type { GraphWireColorId } from './pinColors';
 import type {
   FunctionSlot,
   GraphEdge,
@@ -180,7 +181,8 @@ export function applyGroupSelection(
   nodes: GraphNode[],
   edges: GraphEdge[],
   selectedIds: readonly string[],
-  extendedPalette: boolean
+  extendedPalette: boolean,
+  nodeHeightOpts?: NodeHeightOptions
 ): { nodes: GraphNode[]; edges: GraphEdge[]; selectedIds: string[] } | null {
   if (selectedIds.length === 0) return null;
 
@@ -249,7 +251,7 @@ export function applyGroupSelection(
   } else {
     const fn = containedNodes.find((n) => n.kind === 'function' || n.kind === 'generate');
     if (fn?.kind === 'function') outColor = fn.outputPinColor;
-    else if (fn?.kind === 'generate') outColor = UNIVERSAL_SOCKET_COLOR_ID;
+    else if (fn?.kind === 'generate') outColor = 'gray';
   }
 
   const groupId = newId('n-group');
@@ -262,7 +264,7 @@ export function applyGroupSelection(
   let maxY = -Infinity;
   for (const n of containedNodes) {
     const w = graphNodeWidth(n);
-    const h = nodeHeight(n, edges);
+    const h = nodeHeight(n, edges, nodeHeightOpts);
     minX = Math.min(minX, n.x);
     minY = Math.min(minY, n.y);
     maxX = Math.max(maxX, n.x + w);

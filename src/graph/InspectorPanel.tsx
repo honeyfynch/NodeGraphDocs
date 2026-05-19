@@ -16,13 +16,15 @@ import {
 } from './graphWiring';
 import { isGraphPinStyleId } from './geometry';
 import { useGraph } from './GraphContext';
-import type { FrameVariant, FunctionSlot, RowPropertyType } from './types';
+import type { FrameVariant, FunctionSlot, RowPropertyType, GraphTypeId, TaskLeadingIconId } from './types';
 import {
   ROW_PROPERTY_FIGMA_LABEL,
   ROW_PROPERTY_TYPE_IDS,
   ROW_PROPERTY_TYPE_IDS_INPUT_GROUP_CHILD,
   normalizeFunctionSlot,
   rowPropertyUsesInputTextPlaceholder,
+  TASK_LEADING_ICON_IDS,
+  TASK_LEADING_ICON_LABEL,
 } from './types';
 
 const FRAME_OPTS: FrameVariant[] = ['standard', 'emphasis', 'muted'];
@@ -92,33 +94,54 @@ export function InspectorPanel() {
               <div className="p-md flex-col gap-sm workbench-inspector-section-divider">
                 <div className="text-xs font-semibold text-emphasis">Graph</div>
                 <NodePropertyFieldShell variant="plain">
-                  <Checkbox
-                    label="Play mode"
-                    hint="Graph can trigger a runtime mode"
-                    checked={state.playMode}
-                    onCheckedChange={(value) => dispatch({ type: 'setPlayMode', value })}
-                  />
+                  <Field label="Graph type">
+                    <Dropdown
+                      variant="nodeProperty"
+                      value={state.graphType}
+                      onChange={(v) =>
+                        dispatch({
+                          type: 'setGraphType',
+                          value: v as GraphTypeId,
+                        })
+                      }
+                    >
+                      <DropdownItem value="dataFlow">Data Flow</DropdownItem>
+                      <DropdownItem value="management">Management</DropdownItem>
+                    </Dropdown>
+                  </Field>
                 </NodePropertyFieldShell>
-                <NodePropertyFieldShell variant="plain">
-                  <Checkbox
-                    label="Parameters"
-                    hint="Graph integrates parameters"
-                    checked={state.parametersEnabled}
-                    onCheckedChange={(value) =>
-                      dispatch({ type: 'setParametersEnabled', value })
-                    }
-                  />
-                </NodePropertyFieldShell>
-                <NodePropertyFieldShell variant="plain">
-                  <Checkbox
-                    label="Generative Nodes"
-                    hint="Graph integrates generative nodes."
-                    checked={state.generativeNodesEnabled}
-                    onCheckedChange={(value) =>
-                      dispatch({ type: 'setGenerativeNodesEnabled', value })
-                    }
-                  />
-                </NodePropertyFieldShell>
+                {state.graphType === 'dataFlow' ? (
+                  <>
+                    <NodePropertyFieldShell variant="plain">
+                      <Checkbox
+                        label="Play mode"
+                        hint="Graph can trigger a runtime mode"
+                        checked={state.playMode}
+                        onCheckedChange={(value) => dispatch({ type: 'setPlayMode', value })}
+                      />
+                    </NodePropertyFieldShell>
+                    <NodePropertyFieldShell variant="plain">
+                      <Checkbox
+                        label="Parameters"
+                        hint="Graph integrates parameters"
+                        checked={state.parametersEnabled}
+                        onCheckedChange={(value) =>
+                          dispatch({ type: 'setParametersEnabled', value })
+                        }
+                      />
+                    </NodePropertyFieldShell>
+                    <NodePropertyFieldShell variant="plain">
+                      <Checkbox
+                        label="Generative Nodes"
+                        hint="Graph integrates generative nodes."
+                        checked={state.generativeNodesEnabled}
+                        onCheckedChange={(value) =>
+                          dispatch({ type: 'setGenerativeNodesEnabled', value })
+                        }
+                      />
+                    </NodePropertyFieldShell>
+                  </>
+                ) : null}
               </div>
             ) : null}
 
@@ -753,6 +776,56 @@ export function InspectorPanel() {
           </Field>
         </div>
       )}
+
+      {node?.kind === 'task' && (
+        <div className="flex-col gap-md">
+          <Field label="Title">
+            <TextInput
+              variant="nodeProperty"
+              value={node.title}
+              onChange={(e) =>
+                dispatch({
+                  type: 'updateTask',
+                  id: node.id,
+                  patch: { title: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <Field label="Leading icon">
+            <Dropdown
+              variant="nodeProperty"
+              value={node.leadingIconId}
+              onChange={(v) =>
+                dispatch({
+                  type: 'updateTask',
+                  id: node.id,
+                  patch: { leadingIconId: v as TaskLeadingIconId },
+                })
+              }
+            >
+              {TASK_LEADING_ICON_IDS.map((id) => (
+                <DropdownItem key={id} value={id}>
+                  {TASK_LEADING_ICON_LABEL[id]}
+                </DropdownItem>
+              ))}
+            </Dropdown>
+          </Field>
+          <NodePropertyFieldShell variant="plain">
+            <Checkbox
+              label="Muted"
+              checked={Boolean(node.disabled)}
+              onCheckedChange={(disabled) =>
+                dispatch({
+                  type: 'updateTask',
+                  id: node.id,
+                  patch: { disabled },
+                })
+              }
+            />
+          </NodePropertyFieldShell>
+        </div>
+      )}
       </div>
 
       {node && (
@@ -761,7 +834,14 @@ export function InspectorPanel() {
           {edgesHere.length === 0 && (
             <div className="text-xs text-muted">No edges attached.</div>
           )}
-          {edgesHere.map((e) => (
+          {edgesHere.map((e) => {
+            const fromN = state.nodes.find((n) => n.id === e.from.nodeId);
+            const toN = state.nodes.find((n) => n.id === e.to.nodeId);
+            const fixedTaskChain =
+              state.graphType === 'management' &&
+              fromN?.kind === 'task' &&
+              toN?.kind === 'task';
+            return (
             <div
               key={e.id}
               className="flex-row items-center justify-between gap-sm text-xs"
@@ -769,6 +849,7 @@ export function InspectorPanel() {
               <span className="text-muted min-w-0" style={{ wordBreak: 'break-all' }}>
                 {e.from.nodeId}:{e.from.port} → {e.to.nodeId}:{e.to.port}
               </span>
+              {!fixedTaskChain ? (
               <Button
                 variant="standard"
                 className="shrink-0"
@@ -776,8 +857,12 @@ export function InspectorPanel() {
               >
                 Remove
               </Button>
+              ) : (
+                <span className="text-muted shrink-0 text-xs">Fixed</span>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
           </>
@@ -829,6 +914,21 @@ export function InspectorPanel() {
             </NodePropertyFieldShell>
             <NodePropertyFieldShell variant="plain">
               <Checkbox
+                label="Expand/Collapse in Toolbar"
+                hint={
+                  state.contextToolbar
+                    ? 'When on, expand/collapse is only in the context toolbar. When off, the node header chevron returns (still follows Right-aligned Chevron).'
+                    : 'Turn on Context Toolbar to use this option.'
+                }
+                checked={state.contextToolbarExpandCollapseInToolbar}
+                disabled={!state.contextToolbar}
+                onCheckedChange={(value) =>
+                  dispatch({ type: 'setContextToolbarExpandCollapseInToolbar', value })
+                }
+              />
+            </NodePropertyFieldShell>
+            <NodePropertyFieldShell variant="plain">
+              <Checkbox
                 label="Docked"
                 hint={
                   state.contextToolbar
@@ -845,7 +945,7 @@ export function InspectorPanel() {
             <NodePropertyFieldShell variant="plain">
               <Checkbox
                 label="Right-aligned Chevron"
-                hint="When off, expand/collapse chevrons stay on the left of node headers and input groups. When on (default), chevrons align to the right of the header row. Node header chevrons still hide when Context Toolbar is on."
+                hint="When off, expand/collapse chevrons stay on the left of node headers and input groups. When on (default), chevrons align to the right of the header row. With Context Toolbar on, header chevrons show only when Expand/Collapse in Toolbar is off."
                 checked={state.rightAlignedChevron}
                 onCheckedChange={(value) =>
                   dispatch({ type: 'setRightAlignedChevron', value })

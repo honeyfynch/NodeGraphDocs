@@ -24,8 +24,11 @@ export type NodeContextMenuProps = {
   hasSelection: boolean;
   /** No group in the selection — disables Ungroup. */
   ungroupDisabled: boolean;
+  graphGroupingDisabled?: boolean;
   /** Target node cannot be swapped (e.g. group wrapper). */
   swapNodeDisabled: boolean;
+  /** When true, Swap node row and flyout are omitted (e.g. management graph). */
+  swapNodeHidden?: boolean;
   colorRows: readonly { label: string; colorId: GraphWireColorId }[];
   onSwapNode: (outputPinColor: GraphWireColorId) => void;
   onCut: () => void;
@@ -48,6 +51,8 @@ export function NodeContextMenu({
   hasClipboard,
   hasSelection,
   ungroupDisabled,
+  graphGroupingDisabled = false,
+  swapNodeHidden = false,
   swapNodeDisabled,
   colorRows,
   onSwapNode,
@@ -132,8 +137,8 @@ export function NodeContextMenu({
   if (!open || !position) return null;
 
   const pasteOff = !hasClipboard;
-  const groupOff = !hasSelection;
-  const ungroupOff = !hasSelection || ungroupDisabled;
+  const groupOff = !hasSelection || graphGroupingDisabled;
+  const ungroupOff = !hasSelection || ungroupDisabled || graphGroupingDisabled;
 
   return (
     <>
@@ -154,16 +159,20 @@ export function NodeContextMenu({
           trailing={<span style={graphMenuHotkeyStyle}>Double click</span>}
           disabled
         />
-        <GraphMenuRow
-          label="Swap node"
-          trailing={<GraphMenuSubmenuChevron />}
-          disabled={swapNodeDisabled}
-          onClick={() => {
-            if (swapNodeDisabled) return;
-            setSwapSubmenuOpen((o) => !o);
-          }}
-        />
-        <GraphMenuDivider />
+        {swapNodeHidden ? null : (
+          <>
+            <GraphMenuRow
+              label="Swap node"
+              trailing={<GraphMenuSubmenuChevron />}
+              disabled={swapNodeDisabled}
+              onClick={() => {
+                if (swapNodeDisabled) return;
+                setSwapSubmenuOpen((o) => !o);
+              }}
+            />
+            <GraphMenuDivider />
+          </>
+        )}
         <GraphMenuRow
           label="Cut"
           trailing={<span style={graphMenuHotkeyStyle}>⌘X</span>}
@@ -227,19 +236,21 @@ export function NodeContextMenu({
         ) : null}
       </div>
 
-      <GraphMenuColorFlyout
-        open={swapSubmenuOpen}
-        sectionTitle="Swap node"
-        mainMenuRef={ref}
-        flyoutRef={swapSubmenuRef}
-        menuPosition={position}
-        colorRows={colorRows}
-        onPickColor={(c) => {
-          onSwapNode(c);
-          setSwapSubmenuOpen(false);
-          onClose();
-        }}
-      />
+      {!swapNodeHidden ? (
+        <GraphMenuColorFlyout
+          open={swapSubmenuOpen}
+          sectionTitle="Swap node"
+          mainMenuRef={ref}
+          flyoutRef={swapSubmenuRef}
+          menuPosition={position}
+          colorRows={colorRows}
+          onPickColor={(c) => {
+            onSwapNode(c);
+            setSwapSubmenuOpen(false);
+            onClose();
+          }}
+        />
+      ) : null}
     </>
   );
 }

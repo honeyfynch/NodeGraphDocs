@@ -10,7 +10,8 @@ import { GraphRibbon } from './GraphRibbon';
 import { useGraph } from './GraphContext';
 import { groupCanvasOutputPinColorId, isInputConnectedWithGroupBridges } from './graphGroupOps';
 import { edgeVisibleForGraphScope, nodeVisibleForGraphScope } from './graphGroupScope';
-import type { GraphEdge, GraphNode, GraphOutPort } from './types';
+import { edgeIdsUpstreamOfNodeIds } from './graphUpstreamPlay';
+import type { GraphEdge, GraphNode, GraphOutPort, GraphTypeId, TaskNode } from './types';
 import {
   bezierPath,
   generateWiredInIndices,
@@ -32,20 +33,23 @@ import {
   progressiveWholeNodeOpacity,
 } from './graphProgressiveConnections';
 import {
+  GROUP_SHELL_HEADER_WIRE_ID,
+  resolveGraphHeaderHex,
   resolveGraphPinHex,
   wireColorsMatch,
-  UNIVERSAL_SOCKET_COLOR_ID,
   type GraphWireColorId,
 } from './pinColors';
 import { findIncomingEdgeToPort } from './graphWiring';
 import { ParameterNodeView } from './nodes/ParameterNodeView';
 import { FunctionNodeView } from './nodes/FunctionNodeView';
+import { TaskNodeView } from './nodes/TaskNodeView';
 import { OutputNodeView } from './nodes/OutputNodeView';
 import { GenerateNodeView } from './nodes/GenerateNodeView';
 import { GroupInputNodeView } from './nodes/GroupInputNodeView';
 import { GroupOutputNodeView } from './nodes/GroupOutputNodeView';
 import { GraphSelectionContextToolbar } from './GraphSelectionContextToolbar';
 import { GraphCanvasUiScaleContext } from './graphCanvasUiScaleContext';
+import { managementDependencyWireD } from './managementGraphTemplate';
 
 const WORLD_W = 2400;
 const WORLD_H = 1600;
@@ -138,6 +142,9 @@ function edgePath(
   if (!fromNode || !toNode) return null;
   const a = pinGraphPosition(fromNode, edge.from.port, edges, pinStyle);
   const b = pinGraphPosition(toNode, edge.to.port, edges, pinStyle);
+  if (fromNode.kind === 'task' && toNode.kind === 'task') {
+    return managementDependencyWireD(fromNode as TaskNode, toNode as TaskNode);
+  }
   return bezierPath(a.x, a.y, b.x, b.y);
 }
 
@@ -156,13 +163,19 @@ function canPreviewEdge(
   if (fromNode.kind === 'parameter') outColor = fromNode.outputPinColor;
   else if (fromNode.kind === 'function') outColor = fromNode.outputPinColor;
   else if (fromNode.kind === 'group') outColor = groupCanvasOutputPinColorId(fromNode, edges);
-  else if (fromNode.kind === 'generate') outColor = UNIVERSAL_SOCKET_COLOR_ID;
+  else if (fromNode.kind === 'generate') outColor = 'gray';
+  else if (fromNode.kind === 'task') outColor = fromNode.outputPinColor;
   else if (fromNode.kind === 'groupInput') {
     const idx = fromPort === 'out' ? 0 : Number(fromPort.slice(4));
     const row = fromNode.outputs[idx];
     if (!row) return null;
     outColor = row.colorId;
   } else return null;
+  if (toNode.kind === 'task') {
+    if (toPort !== 'in-0') return null;
+    if (!wireColorsMatch(outColor, toNode.inputPinColor)) return null;
+    return outColor;
+  }
   if (toNode.kind === 'function' || toNode.kind === 'group') {
     const layouts = layoutFunctionInputPorts(toNode);
     const hit = layouts.find((L) => L.port === toPort);
@@ -193,8 +206,10 @@ function canPreviewEdge(
   return null;
 }
 
-function inputsEditableForWiring(node: GraphNode | undefined): boolean {
+function inputsEditableForWiring(node: GraphNode | undefined, graphType: GraphTypeId): boolean {
   if (!node) return false;
+  if (graphType === 'management' && node.kind === 'task') return false;
+  if (node.kind === 'task') return true;
   if (node.kind === 'parameter') return false;
   if (node.kind === 'generate') {
     return node.expanded && node.inputGroupExpanded;
@@ -303,12 +318,14 @@ export function GraphCanvas() {
     edges: state.edges,
     graphScope: state.graphScope,
     selectedIds: state.selectedIds,
+    contextToolbar: state.contextToolbar,
   });
   pickStateRef.current = {
     nodes: state.nodes,
     edges: state.edges,
     graphScope: state.graphScope,
     selectedIds: state.selectedIds,
+    contextToolbar: state.contextToolbar,
   };
 
   const nodeBoundsRefMap = useRef(new Map<string, HTMLElement>());
@@ -359,6 +376,19 @@ export function GraphCanvas() {
     }
   }, [state.localPlayNodeIds, state.playMode]);
 
+  useEffect(() => {
+    if (state.graphType !== 'management' || !state.graphPlayActive) return;
+    const id = window.setInterval(() => {
+      dispatch({ type: 'managementPlayAdvance' });
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [state.graphType, state.graphPlayActive, dispatch]);
+
+  const upstreamPlayEdgeIds = useMemo(
+    () => edgeIdsUpstreamOfNodeIds(state.localPlayNodeIds, state.edges),
+    [state.localPlayNodeIds, state.edges]
+  );
+
   const selectionMuteMenuLabel = useMemo(() => {
     if (state.selectedIds.length === 0) return null;
     const first = state.nodes.find((n) => n.id === state.selectedIds[0]);
@@ -374,7 +404,10 @@ export function GraphCanvas() {
     });
   }, [dispatch, selectionMuteMenuLabel]);
 
-  const showExpandChevron = !state.contextToolbar;
+  const showExpandChevron =
+    !state.contextToolbar || !state.contextToolbarExpandCollapseInToolbar;
+  const contextToolbarUnifiesExpand =
+    state.contextToolbar && state.contextToolbarExpandCollapseInToolbar;
 
   const contextToolbarTargetIds = useMemo(
     () => idsForContextToolbarActions(state.nodes, state.selectedIds),
@@ -430,10 +463,11 @@ export function GraphCanvas() {
       48,
       0.35,
       2.5,
-      state.edges
+      state.edges,
+      { includeGenerateRunRow: !state.contextToolbar }
     );
     if (next) setView(next);
-  }, [state.nodes, state.selectedIds, state.edges]);
+  }, [state.nodes, state.selectedIds, state.edges, state.contextToolbar]);
 
   /** Pan / zoom — must use a non-passive native `wheel` listener so `preventDefault` works (browser default is passive). */
   const onWheelNative = useCallback((e: WheelEvent) => {
@@ -603,7 +637,7 @@ export function GraphCanvas() {
           }
         }
         if (e.type !== 'pointercancel') {
-          const { nodes, edges, graphScope, selectedIds } = pickStateRef.current;
+          const { nodes, edges, graphScope, selectedIds, contextToolbar } = pickStateRef.current;
           const dx = e.clientX - bs.startClientX;
           const dy = e.clientY - bs.startClientY;
           const tinyClient = dx * dx + dy * dy < BOX_SELECT_TINY_CLIENT_PX2;
@@ -620,7 +654,8 @@ export function GraphCanvas() {
               bs.gx0,
               bs.gy0,
               bs.gx1,
-              bs.gy1
+              bs.gy1,
+              { includeGenerateRunRow: !contextToolbar }
             );
             if (hits.length === 0) {
               if (!bs.additive) dispatch({ type: 'select', id: null });
@@ -837,19 +872,21 @@ export function GraphCanvas() {
   const handleOutputDown = useCallback(
     (nodeId: string, e: React.PointerEvent, fromPort: GraphOutPort = 'out') => {
       const n = state.nodes.find((x) => x.id === nodeId);
+      if (state.graphType === 'management' && n?.kind === 'task') return;
       if (
         !n ||
         (n.kind !== 'parameter' &&
           n.kind !== 'function' &&
           n.kind !== 'generate' &&
           n.kind !== 'group' &&
-          n.kind !== 'groupInput')
+          n.kind !== 'groupInput' &&
+          n.kind !== 'task')
       ) {
         return;
       }
       dispatch({ type: 'select', id: nodeId, additive: false });
       let colorId: GraphWireColorId;
-      if (n.kind === 'generate') colorId = UNIVERSAL_SOCKET_COLOR_ID;
+      if (n.kind === 'generate') colorId = 'gray';
       else if (n.kind === 'groupInput') {
         const idx = fromPort === 'out' ? 0 : Number(fromPort.slice(4));
         colorId = n.outputs[idx]?.colorId ?? 'gray';
@@ -878,13 +915,13 @@ export function GraphCanvas() {
       wireDragRef.current = wd;
       setWireDrag(wd);
     },
-    [state.nodes, state.edges, dispatch]
+    [state.nodes, state.edges, state.graphType, dispatch]
   );
 
   const handleInputPointerDown = useCallback(
     (toNodeId: string, port: `in-${number}`, e: React.PointerEvent) => {
       const toNode = state.nodes.find((x) => x.id === toNodeId);
-      if (!inputsEditableForWiring(toNode)) return;
+      if (!inputsEditableForWiring(toNode, state.graphType)) return;
       const incoming = findIncomingEdgeToPort(state.nodes, state.edges, toNodeId, port);
       if (!incoming) return;
       dispatch({ type: 'select', id: toNodeId, additive: false });
@@ -895,7 +932,8 @@ export function GraphCanvas() {
           fromNode.kind !== 'function' &&
           fromNode.kind !== 'generate' &&
           fromNode.kind !== 'group' &&
-          fromNode.kind !== 'groupInput')
+          fromNode.kind !== 'groupInput' &&
+          fromNode.kind !== 'task')
       ) {
         return;
       }
@@ -913,7 +951,7 @@ export function GraphCanvas() {
         startClientY: e.clientY,
       };
     },
-    [state.edges, state.nodes, dispatch]
+    [state.edges, state.nodes, state.graphType, dispatch]
   );
 
   const handleInputUp = useCallback(
@@ -925,7 +963,7 @@ export function GraphCanvas() {
       e.preventDefault();
       e.stopPropagation();
       const toNode = state.nodes.find((x) => x.id === toNodeId);
-      if (!inputsEditableForWiring(toNode)) {
+      if (!inputsEditableForWiring(toNode, state.graphType)) {
         setWireDrag(null);
         wireDragRef.current = null;
         return;
@@ -953,7 +991,7 @@ export function GraphCanvas() {
       setWireDrag(null);
       wireDragRef.current = null;
     },
-    [state.nodes, state.edges, connectEdge, edgeTaken, dispatch]
+    [state.nodes, state.edges, state.graphType, connectEdge, edgeTaken, dispatch]
   );
 
   const ghostPath = useMemo(() => {
@@ -1123,10 +1161,17 @@ export function GraphCanvas() {
         style={{
           position: 'relative',
           overflow: 'hidden',
-          background: state.graphScope
-            ? 'linear-gradient(0deg, var(--graph-scope-surface-highlight-100), var(--graph-scope-surface-highlight-100)), var(--studio-canvas)'
-            : 'var(--studio-canvas)',
+          background: 'var(--studio-canvas)',
           outline: 'none',
+          boxSizing: 'border-box',
+          ...(state.graphScope
+            ? {
+                border: `2px solid ${resolveGraphHeaderHex(
+                  GROUP_SHELL_HEADER_WIRE_ID,
+                  state.extendedPalette
+                )}`,
+              }
+            : {}),
         }}
       >
       <GraphSelectionContextToolbar
@@ -1136,6 +1181,7 @@ export function GraphCanvas() {
             !state.graphScope
         )}
         docked={state.contextToolbarDocked}
+        showExpandCollapseInToolbar={state.contextToolbarExpandCollapseInToolbar}
         selectedIds={contextToolbarTargetIds}
         nodes={state.nodes}
         nodeElById={nodeBoundsRefMap.current}
@@ -1183,6 +1229,22 @@ export function GraphCanvas() {
             overflow: 'visible',
           }}
         >
+          <defs>
+            <marker
+              id="mgmt-dependency-arrow"
+              markerUnits="userSpaceOnUse"
+              markerWidth="9"
+              markerHeight="15"
+              refX="9"
+              refY="7.36"
+              orient="auto"
+            >
+              <path
+                fill="#6A6F81"
+                d="M8.07 8.07c.39-.39.39-1.02 0-1.41L1.71.29A1 1 0 0 0 .29 1.71L5.95 7.36.29 13.02a1 1 0 1 0 1.41 1.41l6.37-6.37z"
+              />
+            </marker>
+          </defs>
           {state.edges
             .filter((edge) => edgeVisibleForGraphScope(edge, state.graphScope, state.nodes))
             .map((edge) => {
@@ -1191,12 +1253,14 @@ export function GraphCanvas() {
             const hex = resolveGraphPinHex(edge.colorId, state.extendedPalette);
             const wireId = `wire-${edge.id}`;
             const fromNode = state.nodes.find((n) => n.id === edge.from.nodeId);
+            const toNode = state.nodes.find((n) => n.id === edge.to.nodeId);
             const fromDisabled = Boolean(fromNode?.disabled);
-            const localPlaySet = new Set(state.localPlayNodeIds);
+            const taskChain = fromNode?.kind === 'task' && toNode?.kind === 'task';
             const showFlow =
+              !taskChain &&
               state.playMode &&
               !fromDisabled &&
-              (state.graphPlayActive || localPlaySet.has(edge.from.nodeId));
+              (state.graphPlayActive || upstreamPlayEdgeIds.has(edge.id));
             return (
               <g key={edge.id}>
                 <path
@@ -1204,9 +1268,10 @@ export function GraphCanvas() {
                   d={d}
                   fill="none"
                   stroke={hex}
-                  strokeWidth={2}
+                  strokeWidth={taskChain ? 1.5 : GRAPH_WIRE_STROKE_PX}
                   strokeLinecap="round"
                   strokeOpacity={fromDisabled ? 0.3 : 1}
+                  markerEnd={taskChain ? 'url(#mgmt-dependency-arrow)' : undefined}
                 />
                 {showFlow && (
                   <circle
@@ -1358,7 +1423,7 @@ export function GraphCanvas() {
                   }
                   onSelect={select}
                   onToggleExpand={() =>
-                    state.contextToolbar
+                    contextToolbarUnifiesExpand
                       ? dispatch({ type: 'unifyExpandSelection' })
                       : dispatch({ type: 'toggleExpanded', id: node.id })
                   }
@@ -1397,6 +1462,34 @@ export function GraphCanvas() {
                   onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
                   showExpandChevron={showExpandChevron}
                   rightAlignedChevron={state.rightAlignedChevron}
+                  onBoundsEl={getNodeBoundsElCallback(node.id)}
+                />
+              );
+            }
+
+            if (node.kind === 'task') {
+              const progressiveCardOpacity = progressiveWholeNodeOpacity(
+                node,
+                wireDrag,
+                state.progressiveConnections,
+                state.edges
+              );
+              return (
+                <TaskNodeView
+                  key={node.id}
+                  node={node}
+                  selected={selected}
+                  progressiveCardOpacity={progressiveCardOpacity}
+                  onSelect={select}
+                  onTitleCommit={(title) =>
+                    dispatch({ type: 'updateTask', id: node.id, patch: { title } })
+                  }
+                  onTitleDragStart={(c) => startDragFromPointer(node.id, c)}
+                  onHeaderDragPointerDown={(e) => moveNodeStart(node.id, e)}
+                  onResizeEdgePointerDown={(edge, e) =>
+                    startNodeResize(node.id, edge, e)
+                  }
+                  onNodeContextMenu={(e) => handleNodeContextMenu(node.id, e)}
                   onBoundsEl={getNodeBoundsElCallback(node.id)}
                 />
               );
@@ -1466,7 +1559,7 @@ export function GraphCanvas() {
                   }
                   onSelect={select}
                   onToggleExpand={() =>
-                    state.contextToolbar
+                    contextToolbarUnifiesExpand
                       ? dispatch({ type: 'unifyExpandSelection' })
                       : dispatch({ type: 'toggleExpanded', id: node.id })
                   }
@@ -1519,7 +1612,7 @@ export function GraphCanvas() {
                   edges={state.edges}
                   onSelect={select}
                   onToggleExpand={() =>
-                    state.contextToolbar
+                    contextToolbarUnifiesExpand
                       ? dispatch({ type: 'unifyExpandSelection' })
                       : dispatch({ type: 'toggleExpanded', id: node.id })
                   }
@@ -1661,7 +1754,7 @@ export function GraphCanvas() {
                 inputConnected={isInputConnected(node.id, 'in-0')}
                 onSelect={select}
                 onToggleExpand={() =>
-                  state.contextToolbar
+                  contextToolbarUnifiesExpand
                     ? dispatch({ type: 'unifyExpandSelection' })
                     : dispatch({ type: 'toggleExpanded', id: node.id })
                 }
@@ -1735,6 +1828,16 @@ export function GraphCanvas() {
           .filter((n) => n.kind === 'parameter')
           .map((n) => ({ id: n.id, title: n.title }))}
         colorRows={insertNodeColorRows}
+        managementInsertTask={state.graphType === 'management'}
+        onInsertTaskNode={() => {
+          if (!contextMenu) return;
+          dispatch({
+            type: 'addTaskNodeAt',
+            graphX: contextMenu.pasteOriginGraph.x,
+            graphY: contextMenu.pasteOriginGraph.y,
+          });
+          setContextMenu(null);
+        }}
         onInsertFunctionNode={(outputPinColor) => {
           if (!contextMenu) return;
           dispatch({
@@ -1810,6 +1913,7 @@ export function GraphCanvas() {
             (n) => n.kind === 'group' && state.selectedIds.includes(n.id)
           )
         }
+        graphGroupingDisabled={state.graphType === 'management'}
         muteSelectionLabel={selectionMuteMenuLabel}
         onMuteSelection={() => {
           setContextMenu(null);
@@ -1826,6 +1930,14 @@ export function GraphCanvas() {
         ungroupDisabled={
           !state.nodes.some(
             (n) => n.kind === 'group' && state.selectedIds.includes(n.id)
+          )
+        }
+        graphGroupingDisabled={state.graphType === 'management'}
+        swapNodeHidden={
+          state.graphType === 'management' ||
+          Boolean(
+            nodeContextMenu &&
+              state.nodes.find((n) => n.id === nodeContextMenu.nodeId)?.kind === 'task'
           )
         }
         swapNodeDisabled={

@@ -2,6 +2,7 @@
 
 **Audience:** Internal Roblox teams designing and implementing features that use node graphs.  
 **Companion:** This document is meant to sit beside the **web prototype** in this repository (`src/graph/*`).  
+For **Lua / Roblox Foundation** recontribution of graph node chrome (and Blueprints migration), see [foundation-graph-node-recontribution.md](foundation-graph-node-recontribution.md).  
 **Versioning:** Draft — content tracks the prototype as implemented. Update sections when System Management behavior exists in the prototype.
 
 **Figma references:** Slides were captured from **Node-Graph-Draft** (`VxWer5hEenmn5M05lRWrCx`) using **Figma Desktop MCP** `get_screenshot` on the node IDs listed in the [Slide index](#slide-index) (file must be open in Figma Desktop).

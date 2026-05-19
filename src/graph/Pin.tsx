@@ -21,7 +21,7 @@ type Props = {
 };
 
 /**
- * 9×9 socket — Figma `73:5524`: **connected** solid categorical fill (no inner ring); **idle** ring uses
+ * 12×12 socket — Figma `73:5524`: **connected** solid categorical fill (no inner ring); **idle** ring uses
  * `--graph-pin-palette` with interior `--studio-surface-0` (`Color/Surface/Surface_0` in variables).
  * **Classic:** outer surface ring (`--studio-surface-0` box-shadow) unchanged + optional canvas clip.
  * **Orbit / contained:** no outer ring — core only.

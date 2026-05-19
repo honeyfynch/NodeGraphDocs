@@ -58,6 +58,7 @@ export function nodeHasMatchingInputPin(
     return node.expanded && node.inputGroupExpanded;
   }
   if (node.kind === 'output') return wireColorsMatch(wireColor, node.inputPinColor);
+  if (node.kind === 'task') return wireColorsMatch(wireColor, node.inputPinColor);
   if (node.kind === 'function' || node.kind === 'group') {
     for (const L of layoutFunctionInputPorts(node)) {
       const c = inputPinColorForTarget(node, L.target);
@@ -73,6 +74,7 @@ function inputPinColorForPort(
   edges: readonly GraphEdge[] = []
 ): GraphWireColorId | null {
   if (node.kind === 'output') return port === 'in-0' ? node.inputPinColor : null;
+  if (node.kind === 'task') return port === 'in-0' ? node.inputPinColor : null;
   if (node.kind === 'generate') {
     if (!node.expanded || !node.inputGroupExpanded) return null;
     const wired = generateWiredInIndices(node.id, edges);

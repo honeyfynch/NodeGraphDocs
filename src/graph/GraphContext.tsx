@@ -13,14 +13,17 @@ import type {
   GenerateNode,
   GraphEdge,
   GraphNode,
+  GraphTypeId,
   GroupNode,
   OutputNode,
   ParameterNode,
+  TaskNode,
 } from './types';
 import {
   migrateRowPropertyType,
   normalizeFunctionSlot,
   ROW_PROPERTY_TYPE_IDS,
+  TASK_LEADING_ICON_IDS,
 } from './types';
 import {
   PIN_COLOR_IDS,
@@ -52,6 +55,7 @@ import {
   expandDeleteIdsForGroupsAndRestoreEdges,
   isInputConnectedWithGroupBridges,
 } from './graphGroupOps';
+import { createManagementDemoGraph, sortedManagementTasks } from './managementGraphTemplate';
 
 const TOP_LEVEL_ROW_TYPES = ROW_PROPERTY_TYPE_IDS.filter((t) => t !== 'inputGroup');
 
@@ -160,6 +164,13 @@ function migrateAllNodeEdgeColors(
       };
     }
     if (n.kind === 'groupOutput') return { ...n, inputPinColor: mapC(n.inputPinColor) };
+    if (n.kind === 'task') {
+      return {
+        ...n,
+        inputPinColor: forbidReservedShellWireColor(mapC(n.inputPinColor)),
+        outputPinColor: forbidReservedShellWireColor(mapC(n.outputPinColor)),
+      };
+    }
     if (n.kind === 'function' || n.kind === 'group') {
       return {
         ...n,
@@ -171,13 +182,37 @@ function migrateAllNodeEdgeColors(
   });
   const edgesOut = edges.map((e) => {
     const fromN = nodes.find((nn) => nn.id === e.from.nodeId);
-    const sid =
-      fromN?.kind === 'generate' && e.colorId === 'gray'
-        ? UNIVERSAL_SOCKET_COLOR_ID
-        : e.colorId;
+    let sid = e.colorId;
+    if (fromN?.kind === 'generate' && e.colorId === UNIVERSAL_SOCKET_COLOR_ID) {
+      sid = 'gray';
+    }
     return { ...e, colorId: mapC(sid) as GraphWireColorId };
   });
   return { nodes: nodesOut, edges: edgesOut };
+}
+
+function normalizeManagementTaskNodeAfterHydrate(n: GraphNode): GraphNode {
+  if (n.kind !== 'task') return n;
+  let leadingIconId = n.leadingIconId;
+  if (!TASK_LEADING_ICON_IDS.includes(leadingIconId)) {
+    leadingIconId = 'prompt';
+  }
+  const taskState =
+    n.taskState === 'pending' || n.taskState === 'in_progress' || n.taskState === 'completed'
+      ? n.taskState
+      : 'pending';
+  const managementOrder =
+    typeof n.managementOrder === 'number' && Number.isFinite(n.managementOrder)
+      ? n.managementOrder
+      : 0;
+  return {
+    ...n,
+    inputPinColor: forbidReservedShellWireColor(n.inputPinColor),
+    outputPinColor: forbidReservedShellWireColor(n.outputPinColor),
+    leadingIconId,
+    taskState,
+    managementOrder,
+  };
 }
 
 export type GraphState = {
@@ -224,7 +259,7 @@ export type GraphState = {
   graphScope: string | null;
   /**
    * Inspector → Experimental → Pin styling: classic (clipped outer ring), orbit / contained
-   * (full ring + 4px frame-edge anchors vs `PIN_STYLE_FRAME_ANCHOR_PX` in `geometry.ts`).
+   * (full ring + frame-edge anchors; gap from card edge is `PIN_STYLE_FRAME_ANCHOR_PX` in `geometry.ts`).
    */
   pinStyle: GraphPinStyleId;
   /**
@@ -232,6 +267,12 @@ export type GraphState = {
    * selection (Figma `2009:75048`). When false, chevron expand/collapse stays on each node.
    */
   contextToolbar: boolean;
+  /**
+   * Experimental: when true and {@link contextToolbar} is on, expand/collapse lives in the context
+   * toolbar only; when false, header chevrons return (still respecting {@link rightAlignedChevron}).
+   * Cleared when the context toolbar is off.
+   */
+  contextToolbarExpandCollapseInToolbar: boolean;
   /**
    * Experimental: when true and {@link contextToolbar} is on, the selection toolbar is fixed
    * centered under the graph ribbon instead of above the selection. Cleared when the toolbar is off.
@@ -243,10 +284,15 @@ export type GraphState = {
    */
   rightAlignedChevron: boolean;
   /**
-   * Per-node IDs whose outgoing wires show play-mode flow when graph play is off and Play mode is on.
-   * Cleared when graph-level play becomes active.
+   * Per-node IDs used for **selection-local** play-mode flow: wires **upstream** of these nodes
+   * (edges that feed them, recursively toward sources). Cleared when graph-level play becomes active.
    */
   localPlayNodeIds: string[];
+  /**
+   * Graph Settings — **Data Flow** (default) vs **Management** (task-only dependency layout).
+   * Management forces play/parameters/generative off and strips non-task nodes when activated.
+   */
+  graphType: GraphTypeId;
 };
 
 function defaultSlot(i: number, extendedPalette: boolean): FunctionSlot {
@@ -330,20 +376,16 @@ const initialState: GraphState = {
       expanded: true,
     },
     {
-      kind: 'function',
-      id: 'n-fn-3',
+      kind: 'generate',
+      id: 'n-gen',
       x: 520,
       y: 360,
-      title: 'Function',
-      frameVariant: 'standard',
-      slotCount: 3,
-      slots: defaultFunctionSlotsForNode(
-        'gray',
-        defaultCrossPeersForNodeColor('gray', false),
-        false
-      ),
-      outputPinColor: 'gray',
+      title: 'Generate',
+      frameVariant: 'muted',
       expanded: true,
+      generativePhase: 'prompt',
+      promptText: '',
+      inputGroupExpanded: false,
     },
     {
       kind: 'output',
@@ -378,9 +420,11 @@ const initialState: GraphState = {
   graphScope: null,
   pinStyle: 'orbit',
   contextToolbar: true,
+  contextToolbarExpandCollapseInToolbar: false,
   contextToolbarDocked: false,
   rightAlignedChevron: true,
   localPlayNodeIds: [],
+  graphType: 'dataFlow',
 };
 
 type Action =
@@ -457,6 +501,7 @@ type Action =
   /** Advance every Generate node in `ids` (or full selection when omitted) from prompt → output (toolbar Run). */
   | { type: 'runGenerateSelection'; ids?: readonly string[] }
   | { type: 'setContextToolbar'; value: boolean }
+  | { type: 'setContextToolbarExpandCollapseInToolbar'; value: boolean }
   | { type: 'setContextToolbarDocked'; value: boolean }
   | { type: 'setRightAlignedChevron'; value: boolean }
   | { type: 'copySelection' }
@@ -484,6 +529,7 @@ type Action =
   | { type: 'setPinStyle'; value: GraphPinStyleId }
   | { type: 'setPlayMode'; value: boolean }
   | { type: 'toggleGraphPlay' }
+  | { type: 'managementPlayAdvance' }
   /** Horizontal resize from canvas edge handles (`width` clamped; optional `x` when resizing from the left). */
   | { type: 'setNodeDimensions'; id: string; width: number; x?: number }
   /** Context menu Insert node → color: new function centered on `graphX` / `graphY`. */
@@ -493,6 +539,25 @@ type Action =
       graphY: number;
       outputPinColor: GraphWireColorId;
     }
+  | { type: 'addTaskNodeAt'; graphX: number; graphY: number }
+  | {
+      type: 'updateTask';
+      id: string;
+      patch: Partial<
+        Pick<
+          TaskNode,
+          | 'title'
+          | 'inputPinColor'
+          | 'outputPinColor'
+          | 'frameVariant'
+          | 'disabled'
+          | 'taskState'
+          | 'leadingIconId'
+          | 'managementOrder'
+        >
+      >;
+    }
+  | { type: 'setGraphType'; value: GraphTypeId }
   /** Replace node at `nodeId` with a fresh function of `outputPinColor`; drops all edges on that node. */
   | { type: 'swapNodeWithFunction'; nodeId: string; outputPinColor: GraphWireColorId }
   | { type: 'setParametersEnabled'; value: boolean }
@@ -519,6 +584,7 @@ function shouldRecordActionForUndo(action: Action): boolean {
     case 'moveNode':
     case 'setNodeDimensions':
     case 'hydrateGraphState':
+    case 'managementPlayAdvance':
       return false;
     default:
       return true;
@@ -643,6 +709,29 @@ function reducer(state: GraphState, action: Action): GraphState {
       }
       return { ...state, generativeNodesEnabled: true };
     }
+    case 'setGraphType': {
+      if (action.value === state.graphType) return state;
+      if (action.value === 'management') {
+        const { nodes, edges } = createManagementDemoGraph();
+        return {
+          ...state,
+          graphType: 'management',
+          playMode: false,
+          graphPlayActive: false,
+          localPlayNodeIds: [],
+          parametersEnabled: false,
+          generativeNodesEnabled: false,
+          graphScope: null,
+          contextToolbarExpandCollapseInToolbar: false,
+          parameterPanelExpanded: false,
+          nodes,
+          edges,
+          selectedIds: [],
+          clipboard: null,
+        };
+      }
+      return { ...state, graphType: 'dataFlow' };
+    }
     case 'setShowGraphGuide':
       return { ...state, showGraphGuide: action.value };
     case 'setExtendedPalette': {
@@ -668,10 +757,60 @@ function reducer(state: GraphState, action: Action): GraphState {
       };
     case 'toggleGraphPlay': {
       const next = !state.graphPlayActive;
+      if (state.graphType === 'management') {
+        if (!next) {
+          return {
+            ...state,
+            graphPlayActive: false,
+            localPlayNodeIds: [],
+          };
+        }
+        const tasks = sortedManagementTasks(state.nodes);
+        let nodes: GraphNode[] = state.nodes.map((n): GraphNode => {
+          if (n.kind !== 'task') return n;
+          return { ...n, taskState: 'pending' };
+        });
+        const firstId = tasks[0]?.id;
+        if (firstId) {
+          nodes = nodes.map((n): GraphNode =>
+            n.kind === 'task' && n.id === firstId ? { ...n, taskState: 'in_progress' } : n
+          );
+        }
+        return {
+          ...state,
+          graphPlayActive: true,
+          localPlayNodeIds: [],
+          nodes,
+        };
+      }
       return {
         ...state,
         graphPlayActive: next,
         localPlayNodeIds: next ? [] : state.localPlayNodeIds,
+      };
+    }
+    case 'managementPlayAdvance': {
+      if (state.graphType !== 'management' || !state.graphPlayActive) return state;
+      const tasks = sortedManagementTasks(state.nodes);
+      const cur = tasks.find((t) => t.taskState === 'in_progress');
+      if (!cur) {
+        return { ...state, graphPlayActive: false, localPlayNodeIds: [] };
+      }
+      const nextPending = tasks.find(
+        (t) => t.managementOrder > cur.managementOrder && t.taskState === 'pending'
+      );
+      const nodes = state.nodes.map((n): GraphNode => {
+        if (n.kind !== 'task') return n;
+        if (n.id === cur.id) return { ...n, taskState: 'completed' };
+        if (nextPending && n.id === nextPending.id) return { ...n, taskState: 'in_progress' };
+        return n;
+      });
+      const stillActive = Boolean(nextPending);
+      return {
+        ...state,
+        nodes,
+        graphPlayActive: stillActive,
+        localPlayNodeIds: [],
       };
     }
     case 'setContextToolbar':
@@ -679,7 +818,13 @@ function reducer(state: GraphState, action: Action): GraphState {
         ...state,
         contextToolbar: action.value,
         contextToolbarDocked: action.value ? state.contextToolbarDocked : false,
+        contextToolbarExpandCollapseInToolbar: action.value
+          ? state.contextToolbarExpandCollapseInToolbar
+          : false,
       };
+    case 'setContextToolbarExpandCollapseInToolbar':
+      if (!state.contextToolbar) return state;
+      return { ...state, contextToolbarExpandCollapseInToolbar: action.value };
     case 'setContextToolbarDocked':
       if (!state.contextToolbar) return state;
       return { ...state, contextToolbarDocked: action.value };
@@ -755,6 +900,7 @@ function reducer(state: GraphState, action: Action): GraphState {
       };
     }
     case 'enterGroupScope': {
+      if (state.graphType === 'management') return state;
       const g = state.nodes.find(
         (n) => n.id === action.groupId && n.kind === 'group'
       ) as GroupNode | undefined;
@@ -797,6 +943,9 @@ function reducer(state: GraphState, action: Action): GraphState {
         if (n.kind === 'generate') {
           return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
         }
+        if (n.kind === 'task') {
+          return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
+        }
         if (n.kind === 'groupInput' || n.kind === 'groupOutput') {
           return { ...n, width: w, ...(targetX !== undefined ? { x: targetX } : {}) };
         }
@@ -805,6 +954,7 @@ function reducer(state: GraphState, action: Action): GraphState {
       return { ...state, nodes };
     }
     case 'addFunctionNodeAt': {
+      if (state.graphType === 'management') return state;
       const newId =
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
@@ -833,11 +983,79 @@ function reducer(state: GraphState, action: Action): GraphState {
         selectedIds: [newId],
       };
     }
+    case 'addTaskNodeAt': {
+      if (state.graphType !== 'management') return state;
+      const newId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `n-task-${Date.now()}`;
+      const gray = forbidReservedShellWireColor('gray');
+      const maxOrder = state.nodes.reduce((m, n) => {
+        if (n.kind !== 'task') return m;
+        const o = n.managementOrder ?? 0;
+        return o > m ? o : m;
+      }, -1);
+      const node: TaskNode = {
+        kind: 'task',
+        id: newId,
+        x: 0,
+        y: 0,
+        title: 'Task',
+        frameVariant: 'muted',
+        inputPinColor: gray,
+        outputPinColor: gray,
+        taskState: 'pending',
+        leadingIconId: 'prompt',
+        managementOrder: maxOrder + 1,
+      };
+      const w = graphNodeWidth(node);
+      const h = nodeHeight(node);
+      node.x = action.graphX - w / 2;
+      node.y = action.graphY - h / 2;
+      return {
+        ...state,
+        nodes: [...state.nodes, node],
+        selectedIds: [newId],
+      };
+    }
+    case 'updateTask': {
+      const { id, patch } = action;
+      let nextPatch = { ...patch };
+      if (nextPatch.leadingIconId !== undefined) {
+        if (!TASK_LEADING_ICON_IDS.includes(nextPatch.leadingIconId)) {
+          const { leadingIconId: _li, ...rest } = nextPatch;
+          nextPatch = rest;
+        }
+      }
+      if (nextPatch.inputPinColor !== undefined) {
+        nextPatch = {
+          ...nextPatch,
+          inputPinColor: forbidReservedShellWireColor(nextPatch.inputPinColor),
+        };
+      }
+      if (nextPatch.outputPinColor !== undefined) {
+        nextPatch = {
+          ...nextPatch,
+          outputPinColor: forbidReservedShellWireColor(nextPatch.outputPinColor),
+        };
+      }
+      return {
+        ...state,
+        nodes: state.nodes.map((n) =>
+          n.kind === 'task' && n.id === id ? { ...n, ...nextPatch } : n
+        ),
+      };
+    }
     case 'swapNodeWithFunction': {
       const idx = state.nodes.findIndex((n) => n.id === action.nodeId);
       if (idx < 0) return state;
       const prev = state.nodes[idx]!;
-      if (prev.kind === 'group' || prev.kind === 'groupInput' || prev.kind === 'groupOutput') {
+      if (
+        prev.kind === 'group' ||
+        prev.kind === 'groupInput' ||
+        prev.kind === 'groupOutput' ||
+        prev.kind === 'task'
+      ) {
         return state;
       }
       const color = forbidReservedShellWireColor(action.outputPinColor);
@@ -924,6 +1142,11 @@ function reducer(state: GraphState, action: Action): GraphState {
       return { ...state, nodes };
     }
     case 'addEdge': {
+      if (state.graphType === 'management') {
+        const fromN = state.nodes.find((n) => n.id === action.edge.from.nodeId);
+        const toN = state.nodes.find((n) => n.id === action.edge.to.nodeId);
+        if (fromN?.kind === 'task' || toN?.kind === 'task') return state;
+      }
       const taken =
         isInputConnectedWithGroupBridges(
           state.nodes,
@@ -934,8 +1157,17 @@ function reducer(state: GraphState, action: Action): GraphState {
       if (taken) return state;
       return { ...state, edges: [...state.edges, action.edge] };
     }
-    case 'removeEdge':
+    case 'removeEdge': {
+      if (state.graphType === 'management') {
+        const edge = state.edges.find((e) => e.id === action.id);
+        if (edge) {
+          const fromN = state.nodes.find((n) => n.id === edge.from.nodeId);
+          const toN = state.nodes.find((n) => n.id === edge.to.nodeId);
+          if (fromN?.kind === 'task' && toN?.kind === 'task') return state;
+        }
+      }
       return { ...state, edges: state.edges.filter((e) => e.id !== action.id) };
+    }
     case 'updateParameter': {
       const { id, patch } = action;
       if (patch.outputPinColor !== undefined) {
@@ -1047,9 +1279,11 @@ function reducer(state: GraphState, action: Action): GraphState {
     case 'toggleExpanded':
       return {
         ...state,
-        nodes: state.nodes.map((n) =>
-          n.id === action.id ? { ...n, expanded: !n.expanded } : n
-        ),
+        nodes: state.nodes.map((n) => {
+          if (n.id !== action.id) return n;
+          if (!('expanded' in n)) return n;
+          return { ...n, expanded: !n.expanded };
+        }),
       };
     case 'copySelection': {
       const clip = buildClipboardFromSelection(
@@ -1108,7 +1342,8 @@ function reducer(state: GraphState, action: Action): GraphState {
       );
       const { cx, cy } = bboxCenterOfNodes(
         state.clipboard.nodes,
-        state.clipboard.edges
+        state.clipboard.edges,
+        { includeGenerateRunRow: !state.contextToolbar }
       );
       const dx = action.center.x - cx;
       const dy = action.center.y - cy;
@@ -1139,6 +1374,19 @@ function reducer(state: GraphState, action: Action): GraphState {
           selectedOut = selectedOut.filter((id) => !genIds.has(id));
         }
       }
+      if (state.graphType === 'management') {
+        const nonTask = new Set(
+          positioned.filter((n) => n.kind !== 'task').map((n) => n.id)
+        );
+        if (nonTask.size > 0) {
+          positioned = positioned.filter((n) => n.kind === 'task');
+          edgesOut = edgesOut.filter(
+            (e) => !nonTask.has(e.from.nodeId) && !nonTask.has(e.to.nodeId)
+          );
+          selectedOut = selectedOut.filter((id) => !nonTask.has(id));
+        }
+      }
+      if (positioned.length === 0) return state;
       return {
         ...state,
         nodes: [...state.nodes, ...positioned],
@@ -1160,21 +1408,35 @@ function reducer(state: GraphState, action: Action): GraphState {
         state.extendedPalette
       );
       const OFFSET = 48;
-      const positioned = translateNodes(remapped, OFFSET, OFFSET);
+      let positioned = translateNodes(remapped, OFFSET, OFFSET);
+      let edgesDup = newEdges;
+      let selOut = newSelectedIds;
+      if (state.graphType === 'management') {
+        const nonTask = new Set(positioned.filter((n) => n.kind !== 'task').map((n) => n.id));
+        if (nonTask.size > 0) {
+          positioned = positioned.filter((n) => n.kind === 'task');
+          edgesDup = edgesDup.filter(
+            (e) => !nonTask.has(e.from.nodeId) && !nonTask.has(e.to.nodeId)
+          );
+          selOut = selOut.filter((id) => !nonTask.has(id));
+        }
+      }
+      if (positioned.length === 0) return state;
       return {
         ...state,
         nodes: [...state.nodes, ...positioned],
-        edges: [...state.edges, ...newEdges],
-        selectedIds: newSelectedIds,
+        edges: [...state.edges, ...edgesDup],
+        selectedIds: selOut,
       };
     }
     case 'groupSelection': {
-      if (state.graphScope) return state;
+      if (state.graphScope || state.graphType === 'management') return state;
       const next = applyGroupSelection(
         state.nodes,
         state.edges,
         state.selectedIds,
-        state.extendedPalette
+        state.extendedPalette,
+        { includeGenerateRunRow: !state.contextToolbar }
       );
       if (!next) return state;
       return {
@@ -1185,7 +1447,7 @@ function reducer(state: GraphState, action: Action): GraphState {
       };
     }
     case 'ungroupSelection': {
-      if (state.graphScope) return state;
+      if (state.graphScope || state.graphType === 'management') return state;
       const next = applyUngroupSelection(state.nodes, state.edges, state.selectedIds);
       if (!next) return state;
       return {
@@ -1209,7 +1471,7 @@ function reducer(state: GraphState, action: Action): GraphState {
       const idx = state.nodes.findIndex((n) => n.id === id);
       if (idx < 0) return state;
       const node = state.nodes[idx]!;
-      if (node.kind === 'output') return state;
+      if (node.kind === 'output' || node.kind === 'task') return state;
       if (!(node.kind === 'parameter' || node.kind === 'function' || node.kind === 'generate')) {
         return state;
       }
@@ -1304,9 +1566,7 @@ function reducer(state: GraphState, action: Action): GraphState {
         edges = state.edges
           .filter((e) => e.to.nodeId !== id)
           .map((e) =>
-            e.from.nodeId === id
-              ? { ...e, colorId: UNIVERSAL_SOCKET_COLOR_ID as GraphWireColorId }
-              : e
+            e.from.nodeId === id ? { ...e, colorId: 'gray' as GraphWireColorId } : e
           );
       } else if (nextKind === 'function' && node.kind === 'generate') {
         const fn = replacement as FunctionNode;
@@ -1324,8 +1584,32 @@ function reducer(state: GraphState, action: Action): GraphState {
       if (typeof next.contextToolbarDocked !== 'boolean') {
         next.contextToolbarDocked = false;
       }
+      if (typeof next.contextToolbarExpandCollapseInToolbar !== 'boolean') {
+        next.contextToolbarExpandCollapseInToolbar = false;
+      }
       if (!next.contextToolbar) {
         next.contextToolbarDocked = false;
+        next.contextToolbarExpandCollapseInToolbar = false;
+      }
+      if (next.graphType !== 'management' && next.graphType !== 'dataFlow') {
+        next.graphType = 'dataFlow';
+      }
+      if (next.graphType === 'management') {
+        const taskNodes = next.nodes
+          .filter((n) => n.kind === 'task')
+          .map((n) => normalizeManagementTaskNodeAfterHydrate(n));
+        const ids = new Set(taskNodes.map((n) => n.id));
+        next.nodes = taskNodes;
+        next.edges = next.edges.filter(
+          (e) => ids.has(e.from.nodeId) && ids.has(e.to.nodeId)
+        );
+        next.playMode = false;
+        next.graphPlayActive = false;
+        next.localPlayNodeIds = [];
+        next.parametersEnabled = false;
+        next.generativeNodesEnabled = false;
+        next.graphScope = null;
+        next.contextToolbarExpandCollapseInToolbar = false;
       }
       return next;
     }

@@ -29,7 +29,7 @@ import { EditableNodeTitle } from '../EditableNodeTitle';
 import { NodeShell } from '../NodeShell';
 import { NodeResizeEdges } from '../NodeResizeEdges';
 import { Pin } from '../Pin';
-import { UNIVERSAL_SOCKET_COLOR_ID } from '../pinColors';
+import type { GraphWireColorId } from '../pinColors';
 import { Button } from '../../foundation/Button';
 import chevronCollapsedUrl from '../../assets/icons/node-header-chevron-collapsed.svg?url';
 import chevronExpandedUrl from '../../assets/icons/node-header-chevron-expanded.svg?url';
@@ -38,7 +38,7 @@ const GENERATE_HEADER_FILL = 'var(--studio-generate-header)';
 const GENERATE_BODY_FILL = 'var(--studio-generate-body)';
 /** Figma `368:23582` — `radius/small` on Node frame (`--studio-generate-node-radius`). */
 const GENERATE_CARD_RADIUS_PX = 4;
-const GENERATE_PIN_COLOR = UNIVERSAL_SOCKET_COLOR_ID;
+const GENERATE_PIN_COLOR: GraphWireColorId = 'gray';
 
 type Props = {
   node: GenerateNode;
@@ -106,7 +106,10 @@ export function GenerateNodeView({
 }: Props) {
   const { state } = useGraph();
   const w = graphNodeWidth(node);
-  const h = nodeHeight(node, edges);
+  const generateHeightOpts = {
+    includeGenerateRunRow: !state.contextToolbar,
+  } as const;
+  const h = nodeHeight(node, edges, generateHeightOpts);
   const wired = generateWiredInIndices(node.id, edges);
   const nextFree = wired.length === 0 ? 0 : Math.max(...wired) + 1;
   const portOrder = [...wired, nextFree] as number[];
@@ -159,6 +162,7 @@ export function GenerateNodeView({
             node={node}
             edges={edges}
             onEdgePointerDown={onResizeEdgePointerDown}
+            nodeHeightOptions={generateHeightOpts}
           />
         ) : null}
         <NodeShell
@@ -407,14 +411,10 @@ export function GenerateNodeView({
                         />
                       </button>
                     ) : null}
-                    <div className="flex-1 min-w-0 flex-row items-center text-sm">
+                    <div className="flex-1 min-w-0 flex-row items-center text-sm text-muted">
                       <span
                         className="truncate"
-                        style={{
-                          lineHeight: 'var(--alpha-text-bodysmall-line-height)',
-                          color: 'var(--studio-content-default)',
-                          fontWeight: 700,
-                        }}
+                        style={{ lineHeight: 'var(--alpha-text-bodysmall-line-height)' }}
                       >
                         Inputs
                       </span>
@@ -517,34 +517,36 @@ export function GenerateNodeView({
                 ) : null}
               </div>
 
-              {/** Figma `368:23582` CTA — `border-t`, `pt small` `pb xsmall` `px small`; full-width Standard XSmall. */}
-              <div
-                className="flex-row items-stretch w-full"
-                style={{
-                  borderTop: '1px solid var(--studio-generate-divider)',
-                  padding: `${foundationLayout.paddingSmall} ${foundationLayout.paddingSmall} ${foundationLayout.paddingXSmall}`,
-                  boxSizing: 'border-box',
-                  minHeight: GENERATE_RUN_ROW_H,
-                }}
-              >
-                <Button
-                  variant="standard"
-                  size="xsmall"
+              {/** In-card Run — hidden when Context Toolbar is on (Run is on the toolbar). */}
+              {!state.contextToolbar ? (
+                <div
+                  className="flex-row items-stretch w-full"
                   style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRun();
+                    borderTop: '1px solid var(--studio-generate-divider)',
+                    padding: `${foundationLayout.paddingSmall} ${foundationLayout.paddingSmall} ${foundationLayout.paddingXSmall}`,
+                    boxSizing: 'border-box',
+                    minHeight: GENERATE_RUN_ROW_H,
                   }}
                 >
-                  Run
-                </Button>
-              </div>
+                  <Button
+                    variant="standard"
+                    size="xsmall"
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRun();
+                    }}
+                  >
+                    Run
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </NodeShell>

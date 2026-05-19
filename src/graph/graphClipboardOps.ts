@@ -1,4 +1,4 @@
-import { graphNodeWidth, nodeHeight } from './geometry';
+import { graphNodeWidth, nodeHeight, type NodeHeightOptions } from './geometry';
 import type { GraphEdge, GraphNode } from './types';
 import { normalizeFunctionSlot } from './types';
 
@@ -52,7 +52,8 @@ export function buildClipboardFromSelection(
 
 export function bboxCenterOfNodes(
   nodes: GraphNode[],
-  edges: readonly GraphEdge[] = []
+  edges: readonly GraphEdge[] = [],
+  nodeHeightOpts?: NodeHeightOptions
 ): { cx: number; cy: number } {
   let minGX = Infinity;
   let minGY = Infinity;
@@ -60,7 +61,7 @@ export function bboxCenterOfNodes(
   let maxGY = -Infinity;
   for (const n of nodes) {
     const w = graphNodeWidth(n);
-    const h = nodeHeight(n, edges);
+    const h = nodeHeight(n, edges, nodeHeightOpts);
     minGX = Math.min(minGX, n.x);
     minGY = Math.min(minGY, n.y);
     maxGX = Math.max(maxGX, n.x + w);

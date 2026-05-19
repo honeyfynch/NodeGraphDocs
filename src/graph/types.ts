@@ -3,6 +3,60 @@ import { normalizeInputPinColor } from './pinColors';
 
 export type FrameVariant = 'standard' | 'emphasis' | 'muted';
 
+/** Inspector → Graph Settings: dataflow canvas vs management (task-only dependency view). */
+export type GraphTypeId = 'dataFlow' | 'management';
+
+export type TaskNodeState = 'pending' | 'in_progress' | 'completed';
+
+/** Leading icon set aligned to Figma Node Graph Draft dependency chart (`2036:29645`). */
+export type TaskLeadingIconId =
+  | 'prompt'
+  | 'community'
+  | 'code'
+  | 'collect'
+  | 'npc'
+  | 'verify';
+
+export const TASK_LEADING_ICON_IDS: TaskLeadingIconId[] = [
+  'prompt',
+  'community',
+  'code',
+  'collect',
+  'npc',
+  'verify',
+];
+
+export const TASK_LEADING_ICON_LABEL: Record<TaskLeadingIconId, string> = {
+  prompt: 'Prompt',
+  community: 'Community / terrain',
+  code: 'Logic / code',
+  collect: 'Collectables',
+  npc: 'NPC',
+  verify: 'Verify / upscale',
+};
+
+/**
+ * Management graph node — fixed dependency chain (no pin affordances); header row matches
+ * Figma `2036:29659` “Set Pose Cache” task strip (`2036:29645`).
+ */
+export type TaskNode = {
+  kind: 'task';
+  id: string;
+  x: number;
+  y: number;
+  title: string;
+  frameVariant: FrameVariant;
+  /** Legacy wire color fields — management edges are fixed gray; kept for palette / hydrate. */
+  inputPinColor: GraphWireColorId;
+  outputPinColor: GraphWireColorId;
+  disabled?: boolean;
+  width?: number;
+  taskState: TaskNodeState;
+  leadingIconId: TaskLeadingIconId;
+  /** Vertical play order and template chain index. */
+  managementOrder: number;
+};
+
 /**
  * `.NodeProperty` variants — Figma `73:5669` (names match symbol `↳ type=…`).
  * Example composition: node `73:26702`.
@@ -224,7 +278,7 @@ export type OutputNode = {
   width?: number;
 };
 
-/** Generative node — output pin uses {@link UNIVERSAL_SOCKET_COLOR_ID} (`#BCBEC8`, Figma `163:45377`); header uses neutral gray chrome in the canvas. */
+/** Generative node — output / input pins use categorical **gray** (same socket color as gray function nodes); header uses neutral gray chrome in the canvas. */
 export type GenerateNode = {
   kind: 'generate';
   id: string;
@@ -342,7 +396,8 @@ export type GraphNode =
   | GenerateNode
   | GroupNode
   | GroupInputNode
-  | GroupOutputNode;
+  | GroupOutputNode
+  | TaskNode;
 
 export type EdgePortOut = { nodeId: string; port: GraphOutPort };
 export type EdgePortIn = { nodeId: string; port: `in-${number}` };

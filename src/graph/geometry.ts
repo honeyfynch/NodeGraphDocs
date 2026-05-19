@@ -8,6 +8,7 @@ import type {
   GraphOutPort,
 } from './types';
 import { isGraphOutPort } from './types';
+import { MANAGEMENT_TASK_DEFAULT_WIDTH_PX, MANAGEMENT_TASK_ROW_HEIGHT_PX } from './managementGraphTemplate';
 
 /** Body layout shared by {@link FunctionNode} and {@link GroupNode} (pins, rows, input groups). */
 export type FunctionLayoutBody = Pick<FunctionNode, 'slots' | 'x' | 'y' | 'expanded'>;
@@ -20,13 +21,14 @@ export const GRAPH_NODE_MAX_W = 350;
 /** Minimum width for parameter chips when resized. */
 export const GRAPH_NODE_MIN_W_PARAMETER = 80;
 
-/** Card width in graph space (function / output / generate). */
+/** Card width in graph space (function / output / generate / task). */
 export function graphNodeCardWidth(
   node: Extract<
     GraphNode,
-    { kind: 'function' | 'output' | 'generate' | 'group' | 'groupInput' | 'groupOutput' }
+    { kind: 'function' | 'output' | 'generate' | 'group' | 'groupInput' | 'groupOutput' | 'task' }
   >
 ): number {
+  if (node.kind === 'task') return node.width ?? MANAGEMENT_TASK_DEFAULT_WIDTH_PX;
   return node.width ?? NODE_W;
 }
 
@@ -41,7 +43,9 @@ export function graphNodeWidth(node: GraphNode): number {
 }
 
 export function graphNodeMinWidth(node: GraphNode): number {
-  return node.kind === 'parameter' ? GRAPH_NODE_MIN_W_PARAMETER : GRAPH_NODE_MIN_W_CARD;
+  if (node.kind === 'parameter') return GRAPH_NODE_MIN_W_PARAMETER;
+  if (node.kind === 'task') return 120;
+  return GRAPH_NODE_MIN_W_CARD;
 }
 export const HEADER_H = 28;
 /** `.NodeRow` vertical padding 4px + 24px content + 4px (Figma `73:26702`, Padding.XSmall Y). */
@@ -122,9 +126,9 @@ export function isGraphPinStyleId(raw: string): raw is GraphPinStyleId {
 }
 
 /**
- * Pin ↔ node **outer** frame (px). Orbit: input right edge = nodeLeft − this; output left edge =
- * nodeRight + this. Contained **inputs** / **outputs** mirror each other using
- * {@link NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER} from the inner left/right card edges (not this anchor).
+ * Pin ↔ node **outer** frame (px). Orbit: gap from card edge to pin center line — input side
+ * `nodeLeft − this − pinRadius`; output side `nodeRight + this + pinRadius`. Contained **inputs** /
+ * **outputs** use {@link NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER} instead (not this anchor).
  */
 export const PIN_STYLE_FRAME_ANCHOR_PX = 4;
 
@@ -373,7 +377,7 @@ export function parameterOutputPinCenterX(nodeX: number, w: number, pinStyle: Gr
 }
 
 /** Graph `Pin` socket outer diameter (px); core uses `box-sizing: border-box` at this size. */
-export const GRAPH_PIN_DIAMETER_PX = 9;
+export const GRAPH_PIN_DIAMETER_PX = 12;
 /** Half of {@link GRAPH_PIN_DIAMETER_PX} — wire endpoints, flow dot, layout math. */
 export const NODE_INPUT_PIN_OUTER_R = GRAPH_PIN_DIAMETER_PX / 2;
 
@@ -391,15 +395,16 @@ export function graphOrbitPinHitStackStyle(pinStyle: GraphPinStyleId): { zIndex:
 }
 
 /**
- * CSS `right` (px) for header / card-trailing output pin — tuned so pin center matches
- * {@link functionLikeOutputPinCenterX} / {@link parameterOutputPinCenterX} vs classic `-PIN_OFFSET`.
+ * CSS `right` (px) for header / card-trailing output pin — tuned so pin **center** matches
+ * {@link functionLikeOutputPinCenterX} / {@link parameterOutputPinCenterX}. Orbit uses
+ * {@link PIN_STYLE_FRAME_ANCHOR_PX} + full pin diameter (not {@link PIN_OFFSET}).
  */
 export function cardTrailingOutputRightCss(style: GraphPinStyleId): number {
   switch (style) {
     case 'classic':
       return -PIN_OFFSET;
     case 'orbit':
-      return -PIN_OFFSET - 2 * NODE_INPUT_PIN_OUTER_R;
+      return -(PIN_STYLE_FRAME_ANCHOR_PX + GRAPH_PIN_DIAMETER_PX);
     case 'contained':
       return NODE_HEADER_CHEVRON_CENTER_X_FROM_CARD_INNER - NODE_INPUT_PIN_OUTER_R;
   }
@@ -434,6 +439,7 @@ export const PARAMETER_CHIP_H = 28;
 export const PARAMETER_RADIUS_OUTER = 16;
 export const PARAMETER_RADIUS_INNER = PARAMETER_RADIUS_OUTER - 1;
 function collapsed(node: GraphNode): boolean {
+  if (!('expanded' in node)) return true;
   return !node.expanded;
 }
 
@@ -462,20 +468,30 @@ export function generateInputRowCount(nodeId: string, edges: readonly GraphEdge[
 }
 
 /** Pixel height of Generate node body under header (requires edges for input row count). */
+export type NodeHeightOptions = {
+  /**
+   * When false, expanded Generate body height omits the in-card Run row (Run lives on the context toolbar).
+   * Default true.
+   */
+  includeGenerateRunRow?: boolean;
+};
+
 export function generateExpandedBodyHeight(
   node: GenerateNode,
-  edges: readonly GraphEdge[]
+  edges: readonly GraphEdge[],
+  opts?: NodeHeightOptions
 ): number {
   const preview =
     node.generativePhase === 'output' ? generateOutputPreviewStackHeight(node) : 0;
   const inputBodyRows = node.inputGroupExpanded ? generateInputRowCount(node.id, edges) : 0;
   const inputBodyH = inputBodyRows * ROW_H;
+  const runH = opts?.includeGenerateRunRow === false ? 0 : GENERATE_RUN_ROW_H;
   return (
     preview +
     GENERATE_TEXTAREA_SECTION_H +
     GENERATE_INPUT_GROUP_HEADER_H +
     inputBodyH +
-    GENERATE_RUN_ROW_H
+    runH
   );
 }
 
@@ -605,7 +621,16 @@ export function portsForInputGroupSlot(
     .map((L) => L.port);
 }
 
-export function nodeHeight(node: GraphNode, edges: readonly GraphEdge[] = []): number {
+/** Legacy: management tasks are pinless; bounds use card height only. */
+export function taskPinVerticalExtentPx(): number {
+  return 0;
+}
+
+export function nodeHeight(
+  node: GraphNode,
+  edges: readonly GraphEdge[] = [],
+  opts?: NodeHeightOptions
+): number {
   switch (node.kind) {
     case 'parameter':
       return collapsed(node) ? PARAMETER_CHIP_H : PARAMETER_CHIP_H + ROW_H;
@@ -619,13 +644,15 @@ export function nodeHeight(node: GraphNode, edges: readonly GraphEdge[] = []): n
       return collapsed(node) ? HEADER_H : HEADER_H + ROW_H;
     case 'generate':
       if (collapsed(node)) return HEADER_H;
-      return HEADER_H + generateExpandedBodyHeight(node, edges);
+      return HEADER_H + generateExpandedBodyHeight(node, edges, opts);
     case 'groupInput': {
       const rows = Math.max(1, node.outputs.length);
       return HEADER_H + rows * ROW_H;
     }
     case 'groupOutput':
       return HEADER_H + ROW_H;
+    case 'task':
+      return MANAGEMENT_TASK_ROW_HEIGHT_PX;
   }
 }
 
@@ -721,15 +748,14 @@ export function pinGraphPosition(
         };
       }
       const cy = generateInputPortCenterY(node, edges, port as `in-${number}`);
-      const yFallback =
+      const inputsGroupHeaderTop =
         node.y +
         NODE_CARD_BORDER +
         HEADER_H +
         (node.generativePhase === 'output' ? generateOutputPreviewStackHeight(node) : 0) +
-        GENERATE_TEXTAREA_SECTION_H +
-        GENERATE_INPUT_GROUP_HEADER_H +
-        ROW_H / 2 +
-        NODE_ROW_PIN_CENTER_Y_OFFSET;
+        GENERATE_TEXTAREA_SECTION_H;
+      /** Collapsed input group: stub pin centers on the “Inputs” header row. */
+      const yFallback = inputSlotRowCenterY(inputsGroupHeaderTop);
       const x =
         !node.inputGroupExpanded
           ? collapsedStubInputWireX(node.x, pinStyle)
@@ -771,6 +797,15 @@ export function pinGraphPosition(
         y: graphHeaderPinCenterY(node.y),
       };
     }
+    case 'task': {
+      const w = graphNodeCardWidth(node);
+      const cx = node.x + w / 2;
+      const h = MANAGEMENT_TASK_ROW_HEIGHT_PX;
+      if (port === 'out') {
+        return { x: cx, y: node.y + h };
+      }
+      return { x: cx, y: node.y };
+    }
   }
 }
 
@@ -793,3 +828,17 @@ export function bezierPath(x1: number, y1: number, x2: number, y2: number): stri
   return `M ${x1} ${y1} C ${x1 - d} ${y1} ${x2 + d} ${y2} ${x2} ${y2}`;
 }
 
+/** Vertical cubic — for task-to-task dependency edges (top output → bottom input). */
+export function bezierVerticalHandleDy(y1: number, y2: number): number {
+  return Math.max(48, Math.abs(y2 - y1) * 0.45);
+}
+
+export function bezierVerticalPath(x1: number, y1: number, x2: number, y2: number): string {
+  const span = Math.abs(y2 - y1);
+  const rawD = bezierVerticalHandleDy(y1, y2);
+  const d = span <= 0 ? 0 : Math.min(rawD, Math.max(0, span / 2 - 1e-3));
+  if (y2 >= y1) {
+    return `M ${x1} ${y1} C ${x1} ${y1 + d} ${x2} ${y2 - d} ${x2} ${y2}`;
+  }
+  return `M ${x1} ${y1} C ${x1} ${y1 - d} ${x2} ${y2 + d} ${x2} ${y2}`;
+}

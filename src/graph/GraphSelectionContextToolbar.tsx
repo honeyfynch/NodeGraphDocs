@@ -15,8 +15,10 @@ const TOOLBAR_DOCKED_TOP_OFFSET_PX = 12;
 
 export type GraphSelectionContextToolbarProps = {
   open: boolean;
-  /** When true, anchor toolbar centered below the ribbon instead of above the selection. */
+  /** When true, anchor toolbar centered below the graph ribbon instead of above the selection. */
   docked: boolean;
+  /** When true and context toolbar is on, first control is expand/collapse (unify selection). */
+  showExpandCollapseInToolbar: boolean;
   selectedIds: readonly string[];
   nodes: readonly GraphNode[];
   /** Map node id → element used for union bounding rect (client coords). */
@@ -72,6 +74,7 @@ function unionClientRect(
 export function GraphSelectionContextToolbar({
   open,
   docked,
+  showExpandCollapseInToolbar,
   selectedIds,
   nodes,
   nodeElById,
@@ -177,23 +180,25 @@ export function GraphSelectionContextToolbar({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="graph-context-toolbar__backplate" role="toolbar" aria-label="Node actions">
-        <ContextToolbarTooltipWrap label={expandTooltip}>
-          <button
-            type="button"
-            className="graph-context-toolbar__btn"
-            aria-label={expandShowsCollapse ? 'Collapse selected nodes' : 'Expand selected nodes'}
-            onClick={onUnifyExpand}
-          >
-            <img
-              src={expandShowsCollapse ? frameCollapseUrl : frameExpandUrl}
-              width={expandShowsCollapse ? 12 : 16}
-              height={expandShowsCollapse ? 12 : 16}
-              alt=""
-              draggable={false}
-              className="graph-context-toolbar__img"
-            />
-          </button>
-        </ContextToolbarTooltipWrap>
+        {showExpandCollapseInToolbar ? (
+          <ContextToolbarTooltipWrap label={expandTooltip}>
+            <button
+              type="button"
+              className="graph-context-toolbar__btn"
+              aria-label={expandShowsCollapse ? 'Collapse selected nodes' : 'Expand selected nodes'}
+              onClick={onUnifyExpand}
+            >
+              <img
+                src={expandShowsCollapse ? frameCollapseUrl : frameExpandUrl}
+                width={expandShowsCollapse ? 12 : 16}
+                height={expandShowsCollapse ? 12 : 16}
+                alt=""
+                draggable={false}
+                className="graph-context-toolbar__img"
+              />
+            </button>
+          </ContextToolbarTooltipWrap>
+        ) : null}
         <ContextToolbarTooltipWrap label={muteTooltip}>
           <button
             type="button"

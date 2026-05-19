@@ -60,7 +60,7 @@ export function GraphRibbon() {
         </div>
       </div>
       <div className="workbench-graph-ribbon__center">
-        {state.playMode ? (
+        {state.playMode || state.graphType === 'management' ? (
           <GraphPlayModeControl
             ribbon
             graphPlayActive={state.graphPlayActive}

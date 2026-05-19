@@ -1,4 +1,4 @@
-import { graphNodeWidth, nodeHeight } from './geometry';
+import { graphNodeWidth, nodeHeight, type NodeHeightOptions } from './geometry';
 import { nodeVisibleForGraphScope } from './graphGroupScope';
 import type { GraphEdge, GraphNode } from './types';
 
@@ -10,7 +10,8 @@ export function nodeIdsIntersectingGraphRect(
   x0: number,
   y0: number,
   x1: number,
-  y1: number
+  y1: number,
+  nodeHeightOpts?: NodeHeightOptions
 ): string[] {
   const minX = Math.min(x0, x1);
   const maxX = Math.max(x0, x1);
@@ -20,7 +21,7 @@ export function nodeIdsIntersectingGraphRect(
   for (const n of nodes) {
     if (!nodeVisibleForGraphScope(n.id, graphScope, nodes)) continue;
     const w = graphNodeWidth(n);
-    const h = nodeHeight(n, edges);
+    const h = nodeHeight(n, edges, nodeHeightOpts);
     const nx2 = n.x + w;
     const ny2 = n.y + h;
     if (n.x < maxX && nx2 > minX && n.y < maxY && ny2 > minY) {

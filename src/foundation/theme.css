@@ -42,11 +42,6 @@
    */
   --graph-box-select-fill: rgba(101, 123, 244, 0.42);
   --graph-box-select-stroke: #335fff;
-  /**
-   * Group-scoped graph surface overlay — Figma `2012:151683` Highlight_100 (`get_design_context`):
-   * `highlight/highlight_100` / variable `Highlight/Highlight_100` → `#657bf41f` (#657BF4 @ 12%).
-   */
-  --graph-scope-surface-highlight-100: rgba(101, 123, 244, 0.12);
   /** Figma `bg/shift-200` / `bg/shift-300` (workbench panel tabs, graph ribbon chip). */
   --studio-bg-shift-200: rgba(208, 217, 251, 0.08);
   --studio-bg-shift-300: rgba(208, 217, 251, 0.12);
@@ -55,13 +50,13 @@
   --foundation-scrollbar-thumb: rgba(208, 217, 251, 0.28);
   --foundation-scrollbar-thumb-hover: rgba(208, 217, 251, 0.42);
   /** Must match `GRAPH_PIN_DIAMETER_PX` in `src/graph/geometry.ts` (socket layout + wire attach). */
-  --graph-pin-diameter: 9px;
+  --graph-pin-diameter: 12px;
   /**
-   * Node Pin `73:5524` — idle categorical ring (stroke). Thinner than the classic 2px
-   * `--studio-surface-0` outer halo (`.graph-pin-outer-ring`) so the color band reads as a fine ring.
+   * Node Pin `73:5524` — idle / disconnected categorical ring (stroke). Classic also uses a separate
+   * 2px `--studio-surface-0` outer halo (`.graph-pin-outer-ring`) clipped toward the node.
    * Connected: solid fill, ring weight unused (`border-width: 0`). Per-pin hue: `--graph-pin-palette`.
    */
-  --graph-pin-core-ring-weight: 1px;
+  --graph-pin-core-ring-weight: 2px;
   --studio-content-default: #d5d7dd;
   --studio-content-muted: #bcbec8;
   --studio-content-emphasis: #f7f7f8;
@@ -659,6 +654,105 @@ button.graph-ribbon-scope-trigger.select-trigger {
   z-index: 4;
   background: var(--graph-box-select-fill);
   border: 1px solid var(--graph-box-select-stroke);
+}
+
+/* Management task row — Figma Node Graph Draft dependency strip (`2036:29659`); states pending / in progress / completed. */
+.management-task-node {
+  border-radius: 6px;
+  border: 1px solid rgba(208, 217, 251, 0.08);
+  background: #202227;
+}
+.management-task-node--selected {
+  outline: 1px solid var(--studio-stroke-system-contrast);
+  outline-offset: 0;
+}
+.management-task-node--in_progress {
+  border-color: #335fff;
+  box-shadow: 0 0 0 1px rgba(51, 95, 255, 0.35);
+}
+.management-task-node--completed {
+  border-color: rgba(57, 197, 130, 0.55);
+}
+.management-task-node__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px;
+  box-sizing: border-box;
+  cursor: grab;
+}
+.management-task-node__leading {
+  flex-shrink: 0;
+  display: block;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+.management-task-node__title {
+  flex: 1;
+  min-width: 0;
+}
+.management-task-node__trailing {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Figma `2036:29672` ProgressCircleDeterminate — 15×15, inner track/arc 13.058px at 1px inset. */
+.management-task-node__progress {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.management-task-node__progress-track {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 13.058px;
+  height: 13.058px;
+  display: block;
+  pointer-events: none;
+}
+.management-task-node__progress-arc {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 13.058px;
+  height: 13.058px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+.management-task-node__progress-arc-inner {
+  width: 13.058px;
+  height: 13.058px;
+  flex-shrink: 0;
+  transform: rotate(90deg);
+  transform-origin: 50% 50%;
+}
+.management-task-node__progress-arc-inner img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Figma `2036:29665` check-contained-fill — 16×16, success fill masked by check shape. */
+.management-task-node__done {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  background-color: #39c582;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: 14px 14px;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: 14px 14px;
 }
 
 /* Pin color tooltip — Figma `113:20106` (inverse surface, BodySmall, TransientLow-style shadow). */
